@@ -70,12 +70,12 @@ struct Args {
 // ── Data model ────────────────────────────────────────────────────────────────
 
 struct Row {
-    actor:      String,
-    repo:       String,
+    actor: String,
+    repo: String,
     event_type: String,
-    action:     String,
-    language:   String,
-    count:      u64,
+    action: String,
+    language: String,
+    count: u64,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -84,18 +84,34 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let rows = read_csv(&args.input)?;
-    eprintln!("  [read]                         {:>8} rows", rows.len());
+    let total = rows.len();
+    eprintln!("  [read]                         {:>8} rows", total);
 
+    let rows = filter_empty_repos(rows);
     let rows = filter_bots(rows);
     let rows = filter_ci_actors(rows);
+    let rows = filter_single_event_repos(rows);
     let rows = filter_high_volume_actors(rows, args.actor_event_limit);
     let rows = filter_deleted_repos(rows);
-    let rows = filter_empty_repos(rows);
     let rows = filter_fork_only_actors(rows);
-    let rows = filter_single_event_repos(rows);
+
+    let surviving = rows.len();
+    let removed_pct = if total == 0 {
+        0.0
+    } else {
+        100.0 * (total - surviving) as f64 / total as f64
+    };
+    let surviving_pct = 100.0 - removed_pct;
 
     let output = output_path(&args.input)?;
     write_csv(rows, &output)?;
+
+    eprintln!(
+        "  [total]  {:>8} removed ({:.1}%),  {:>8}",
+        total - surviving,
+        removed_pct,
+        surviving,
+    );
 
     Ok(())
 }
@@ -172,7 +188,12 @@ fn filter_high_volume_actors(rows: Vec<Row>, limit: u64) -> Vec<Row> {
         .filter(|r| actor_totals[&r.actor] <= limit)
         .collect();
 
-    log_filter("filter_high_volume_actors", before, rows.len(), &format!("limit={limit}"));
+    log_filter(
+        "filter_high_volume_actors",
+        before,
+        rows.len(),
+        &format!("limit={limit}"),
+    );
     rows
 }
 
@@ -211,7 +232,10 @@ fn is_uuid_like(s: &str) -> bool {
         return false;
     }
     let is_hex = |c: u8| c.is_ascii_hexdigit();
-    b[8] == b'-' && b[13] == b'-' && b[18] == b'-' && b[23] == b'-'
+    b[8] == b'-'
+        && b[13] == b'-'
+        && b[18] == b'-'
+        && b[23] == b'-'
         && b[..8].iter().all(|&c| is_hex(c))
         && b[9..13].iter().all(|&c| is_hex(c))
         && b[14..18].iter().all(|&c| is_hex(c))
@@ -292,11 +316,20 @@ fn filter_single_event_repos(rows: Vec<Row>) -> Vec<Row> {
 // ── Logging helper ────────────────────────────────────────────────────────────
 
 fn log_filter(name: &str, before: usize, after: usize, note: &str) {
-    let note_str = if note.is_empty() { String::new() } else { format!("  ({note})") };
+    let removed = before - after;
+    let removed_pct = if before == 0 {
+        0.0
+    } else {
+        100.0 * removed as f64 / before as f64
+    };
+    let note_str = if note.is_empty() {
+        String::new()
+    } else {
+        format!("  ({note})")
+    };
     eprintln!(
-        "  [{name:<30}]  {:>8} removed, {:>8} remaining{note_str}",
-        before - after,
-        after,
+        "  [{name:<30}]  {:>8} removed ({:4.1}%),  {:>8} remaining{note_str}",
+        removed, removed_pct, after,
     );
 }
 
@@ -309,9 +342,7 @@ fn read_csv(path: &Path) -> Result<Vec<Row>> {
     let mut lines = reader.lines();
 
     // Consume and validate header
-    let header = lines
-        .next()
-        .with_context(|| "file is empty")??;
+    let header = lines.next().with_context(|| "file is empty")??;
     if !header.starts_with("actor,") {
         eprintln!("WARN: unexpected header: {header}");
     }
@@ -331,14 +362,17 @@ fn read_csv(path: &Path) -> Result<Vec<Row>> {
         }
         let count: u64 = match fields[5].trim().parse() {
             Ok(n) => n,
-            Err(_) => { bad += 1; continue; }
+            Err(_) => {
+                bad += 1;
+                continue;
+            }
         };
         rows.push(Row {
-            actor:      fields[0].clone(),
-            repo:       fields[1].clone(),
+            actor: fields[0].clone(),
+            repo: fields[1].clone(),
             event_type: fields[2].clone(),
-            action:     fields[3].clone(),
-            language:   fields[4].clone(),
+            action: fields[3].clone(),
+            language: fields[4].clone(),
             count,
         });
     }
@@ -358,17 +392,24 @@ fn write_csv(rows: Vec<Row>, path: &Path) -> Result<()> {
         .context("write header")?;
 
     for r in &rows {
-        let actor      = csv_field(&r.actor);
-        let repo       = csv_field(&r.repo);
+        let actor = csv_field(&r.actor);
+        let repo = csv_field(&r.repo);
         let event_type = csv_field(&r.event_type);
-        let action     = csv_field(&r.action);
-        let language   = csv_field(&r.language);
-        writeln!(w, "{actor},{repo},{event_type},{action},{language},{}", r.count)
-            .context("write row")?;
+        let action = csv_field(&r.action);
+        let language = csv_field(&r.language);
+        writeln!(
+            w,
+            "{actor},{repo},{event_type},{action},{language},{}",
+            r.count
+        )
+        .context("write row")?;
     }
 
     w.flush().context("flush")?;
-    eprintln!("  [write]                        {:>8} rows written to {path:?}", rows.len());
+    eprintln!(
+        "  [write]                        {:>8} rows written  →  {path:?}",
+        rows.len()
+    );
     Ok(())
 }
 
