@@ -7,10 +7,12 @@ and the GitHub GraphQL API, producing per-language weighted activity ratings for
 
 ## Pipeline overview
 
-Three tools run in sequence to produce a language-rating file for a month:
+Four tools run in sequence to produce a language-rating file for a month:
 
 ```
 github_archive_loader  →  archive-YYYYMM.csv
+        ↓
+filter_csv             →  archive-YYYYMM-filtered.csv
         ↓  (extract repo slugs)
 github_language_loader →  projects-languages-YYYY-MM.jsonl
         ↓
@@ -19,7 +21,8 @@ produce_statistics     →  language-ratings-YYYY-MM.jsonl
 
 | Tool | Input | Output |
 |---|---|---|
-| `github_archive_loader` | GH Archive hourly `.json.gz` files (downloaded automatically) | CSV — `repo,event_type,action,language,count` |
+| `github_archive_loader` | GH Archive hourly `.json.gz` files (downloaded automatically) | CSV — `actor,repo,event_type,action,language,count` |
+| `filter_csv` | archive CSV | filtered CSV — bots, CI actors, single-event repos and deleted repos removed |
 | `github_language_loader` | stdin — one `owner/repo` slug per line | stdout JSONL — `{"repo":"…","languages":[…]}` |
 | `produce_statistics` | archive CSV + languages JSONL | stdout JSONL — `{"language":"Rust","rating":14781.33}` |
 
@@ -44,17 +47,22 @@ cargo run --release --bin github_archive_loader -- \
   --parallelism 10 \
   --output "data/archive-${YEAR}${MONTH}.csv"
 
-# Step 2 — resolve the language breakdown for every repo found in the CSV
-#   (extract unique repo slugs with awk, skip the header, skip blank language column)
+# Step 2 — filter out bots, CI actors, noise repos
+cargo run --release --bin filter_csv -- \
+  --input "data/archive-${YEAR}${MONTH}.csv"
+# produces: data/archive-${YEAR}${MONTH}-filtered.csv
+
+# Step 3 — resolve the language breakdown for every repo found in the filtered CSV
+#   (extract unique repo slugs with awk, skip the header; repo is the 2nd column)
 export GITHUB_TOKEN=ghp_…
-awk -F',' 'NR>1 {print $1}' "data/archive-${YEAR}${MONTH}.csv" | sort -u \
+awk -F',' 'NR>1 {print $2}' "data/archive-${YEAR}${MONTH}-filtered.csv" | sort -u \
   | cargo run --release --bin github_language_loader -- \
       --workers 10 \
   > "data/projects-languages-${MONTH_DASHED}.jsonl"
 
-# Step 3 — compute weighted per-language ratings
+# Step 4 — compute weighted per-language ratings
 cargo run --release --bin produce_statistics -- \
-  --archive "data/archive-${YEAR}${MONTH}.csv" \
+  --archive "data/archive-${YEAR}${MONTH}-filtered.csv" \
   --languages "data/projects-languages-${MONTH_DASHED}.jsonl" \
   > "data/language-ratings-${MONTH_DASHED}.jsonl"
 ```

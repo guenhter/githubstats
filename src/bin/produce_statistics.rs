@@ -1,7 +1,7 @@
 //! produce-statistics
 //!
-//! Joins an archive CSV file (output of `github_archive_loader`) with a
-//! projects-languages JSONL file and computes a weighted language rating.
+//! Joins an archive CSV file (output of `github_archive_loader` / `filter_csv`)
+//! with a projects-languages JSONL file and computes a weighted language rating.
 //!
 //! The archive CSV is filtered to `PullRequestEvent` rows; their counts are
 //! summed per repository to obtain a PR-activity score.  That score is then
@@ -14,8 +14,8 @@
 //! Example: a repo with 10 PR events that is 70 % Python contributes 7.0 to Python.
 //!
 //! Input formats:
-//!   --archive   CSV: repo,event_type,action,language,count
-//!               (output of github_archive_loader)
+//!   --archive   CSV: actor,repo,event_type,action,language,count
+//!               (output of github_archive_loader / filter_csv)
 //!   --languages JSONL: {"repo":"owner/repo","languages":[{"language":"Rust","percent":92.3},…]}
 //!               (output of github_language_loader)
 //!
@@ -131,7 +131,7 @@ fn load_languages(path: &PathBuf) -> Result<HashMap<String, Vec<(String, f64)>>>
 /// then accumulate weighted ratings per language.
 ///
 /// CSV format (first row is header):
-///   repo,event_type,action,language,count
+///   actor,repo,event_type,action,language,count
 fn compute_ratings(
     path: &PathBuf,
     lang_map: &HashMap<String, Vec<(String, f64)>>,
@@ -147,22 +147,22 @@ fn compute_ratings(
             continue;
         }
         // Skip header row
-        if i == 0 && line.starts_with("repo,") {
+        if i == 0 && line.starts_with("actor,") {
             continue;
         }
 
-        // Split CSV line into fields. Fields may be quoted (RFC 4180), but
-        // repo and event_type never contain commas or quotes in practice, so
-        // a simple split on ',' up to 5 fields is safe and avoids a csv crate dep.
-        let fields: Vec<&str> = line.splitn(5, ',').collect();
-        if fields.len() < 5 {
-            eprintln!("  [skip] CSV line {}: expected 5 fields, got {}", i + 1, fields.len());
+        // CSV format: actor,repo,event_type,action,language,count  (6 fields)
+        // Fields may be quoted (RFC 4180), but the relevant fields never contain
+        // commas or quotes in practice, so a simple split is safe.
+        let fields: Vec<&str> = line.splitn(6, ',').collect();
+        if fields.len() < 6 {
+            eprintln!("  [skip] CSV line {}: expected 6 fields, got {}", i + 1, fields.len());
             parse_errors += 1;
             continue;
         }
-        let repo = fields[0].trim_matches('"');
-        let event_type = fields[1].trim_matches('"');
-        let count_str = fields[4].trim_matches('"');
+        let repo = fields[1].trim_matches('"');
+        let event_type = fields[2].trim_matches('"');
+        let count_str = fields[5].trim_matches('"');
 
         // Only count PullRequestEvent rows.
         if event_type != "PullRequestEvent" {
