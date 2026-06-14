@@ -107,10 +107,19 @@ async fn main() -> Result<()> {
         max_languages: args.max_languages,
     };
 
-    let (batch_tx, batch_rx) = async_channel::bounded::<Vec<String>>(32);
+    // Stage 1: read all stdin synchronously before spawning workers so we know
+    // the total batch count up front for progress logging.
+    let batches = produce_batches().await?;
+    let total_batches = batches.len();
+
+    let (batch_tx, batch_rx) = async_channel::bounded::<Vec<String>>(total_batches.max(1));
+    for batch in batches {
+        batch_tx.send(batch).await.context("batch channel send")?;
+    }
+    drop(batch_tx); // channel is fully populated; dropping signals workers to stop when drained
+
     let (result_tx, _) = broadcast::channel::<BatchOutcome>(BROADCAST_CAPACITY);
 
-    let producer = tokio::spawn(produce_batches(batch_tx));
     let mut loaders: JoinSet<Result<()>> = JoinSet::new();
     for _ in 0..args.workers {
         loaders.spawn(load_languages(
@@ -120,9 +129,8 @@ async fn main() -> Result<()> {
         ));
     }
     let writer = tokio::spawn(write_results(result_tx.subscribe()));
-    let logger = tokio::spawn(log_results(result_tx.subscribe()));
+    let logger = tokio::spawn(log_results(result_tx.subscribe(), total_batches));
 
-    producer.await??;
     loaders.join_all().await;
 
     drop(result_tx); // close broadcast — signals writer and logger to finish
@@ -136,9 +144,10 @@ async fn main() -> Result<()> {
 
 // ── Pipeline stages ───────────────────────────────────────────────────────────
 
-/// Stage 1: read stdin line by line, assemble batches, send to the batch channel.
-/// Closing the sender signals all load_languages workers that no more batches are coming.
-async fn produce_batches(tx: async_channel::Sender<Vec<String>>) -> Result<()> {
+/// Stage 1: read stdin line by line and assemble batches.
+/// Returns all batches so the caller knows the total count before workers start.
+async fn produce_batches() -> Result<Vec<Vec<String>>> {
+    let mut batches: Vec<Vec<String>> = Vec::new();
     let mut buffer: Vec<String> = Vec::with_capacity(BATCH_SIZE);
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     while let Some(line) = lines.next_line().await.context("failed to read stdin")? {
@@ -149,16 +158,17 @@ async fn produce_batches(tx: async_channel::Sender<Vec<String>>) -> Result<()> {
         if let Some(slug) = normalize_repo(&line) {
             buffer.push(slug.to_string());
             if buffer.len() == BATCH_SIZE {
-                tx.send(std::mem::take(&mut buffer)).await.ok();
+                batches.push(std::mem::take(&mut buffer));
+                buffer = Vec::with_capacity(BATCH_SIZE);
             }
         } else {
             eprintln!("  [skip] unrecognised input line: {line}");
         }
     }
     if !buffer.is_empty() {
-        tx.send(buffer).await.ok();
+        batches.push(buffer);
     }
-    Ok(())
+    Ok(batches)
 }
 
 /// Stage 2: one of N concurrent workers — pulls batches from the shared MPMC queue,
@@ -206,18 +216,21 @@ async fn write_results(mut rx: broadcast::Receiver<BatchOutcome>) -> Result<u64>
 }
 
 /// Stage 4: receive every BatchOutcome and print a progress line to stderr.
-async fn log_results(mut rx: broadcast::Receiver<BatchOutcome>) {
-    let mut total: usize = 0;
+async fn log_results(mut rx: broadcast::Receiver<BatchOutcome>, total_batches: usize) {
+    let total_repos = total_batches * BATCH_SIZE; // upper bound; last batch may be smaller
+    let mut repos_done: usize = 0;
+    let mut batches_done: usize = 0;
     loop {
         match rx.recv().await {
             Ok(outcome) => {
-                total += outcome.languages.len();
+                repos_done += outcome.languages.len();
+                batches_done += 1;
                 let rl = outcome
                     .rate_limit
                     .map(|(c, r)| format!("  [rate-limit: cost={c}/remaining={r}]"))
                     .unwrap_or_default();
                 eprintln!(
-                    "[repos={total}]{rl}  [{}]",
+                    "[repos={repos_done} / batch {batches_done}/{total_batches} (~{total_repos} repos)]{rl}  [{}]",
                     outcome.elapsed.human(Truncate::Millis)
                 );
             }
