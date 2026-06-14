@@ -386,7 +386,6 @@ fn decompress_events_archive(
         );
     }
 
-
     // events_tx clone dropped here; last decompress worker drop closes the events channel.
     Ok(())
 }
