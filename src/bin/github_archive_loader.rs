@@ -256,9 +256,6 @@ async fn populate_download_jobs(
 /// fetches the raw compressed `.json.gz` body, and forwards it as [`RawBytes`].
 ///
 /// Purely network I/O — no decompression or parsing here.
-/// Transient failures are retried up to [`MAX_RETRIES`] times with exponential
-/// back-off before being logged as WARN.
-///
 /// Stops when the channel is closed and empty (all jobs consumed).
 async fn download_events_archive(
     jobs_rx: async_channel::Receiver<DownloadJob>,
@@ -266,50 +263,16 @@ async fn download_events_archive(
     client: reqwest::Client,
 ) -> Result<()> {
     while let Ok(job) = jobs_rx.recv().await {
-        let mut last_err: anyhow::Error = anyhow::anyhow!("no attempts made");
-        let mut succeeded = false;
-
-        for attempt in 0..=MAX_RETRIES {
-            if attempt > 0 {
-                let delay = RETRY_BASE_DELAY * 2u32.pow(attempt - 1);
-                eprintln!(
-                    "  [{:>4}/{}] retry {attempt}/{MAX_RETRIES} in {}s — {}",
-                    job.idx, job.total, delay.as_secs(), job.url,
-                );
-                sleep(delay).await;
+        match fetch_bytes_with_retry(&client, &job.url, job.idx, job.total).await {
+            Err(_) => {} // already logged in fetch_bytes_with_retry
+            Ok(None) => {
+                eprintln!("  [{:>4}/{}] 404 (skipped) — {}", job.idx, job.total, job.url);
             }
-
-            match fetch_bytes(&client, &job.url).await {
-                Ok(None) => {
-                    // 404 — archive not yet published, skip silently.
-                    eprintln!("  [{:>4}/{}] 404 (skipped) — {}", job.idx, job.total, job.url);
-                    succeeded = true;
-                    break;
-                }
-                Ok(Some(data)) => {
-                    let retry_note = if attempt > 0 {
-                        format!(" (after {attempt} retr{})", if attempt == 1 { "y" } else { "ies" })
-                    } else {
-                        String::new()
-                    };
-                    eprintln!(
-                        "  [{:>4}/{}] {} — {} bytes{retry_note}",
-                        job.idx, job.total, job.url, data.len(),
-                    );
-                    // If the decompress stage has closed, just move on.
-                    let _ = raw_tx.send(RawBytes { url: job.url.clone(), idx: job.idx, total: job.total, data }).await;
-                    succeeded = true;
-                    break;
-                }
-                Err(e) => last_err = e,
+            Ok(Some(data)) => {
+                eprintln!("  [{:>4}/{}] {} — {} bytes", job.idx, job.total, job.url, data.len());
+                // If the decompress stage has closed, just move on.
+                let _ = raw_tx.send(RawBytes { url: job.url.clone(), idx: job.idx, total: job.total, data }).await;
             }
-        }
-
-        if !succeeded {
-            eprintln!(
-                "  [{:>4}/{}] WARN {} (gave up after {MAX_RETRIES} retries): {last_err:#}",
-                job.idx, job.total, job.url,
-            );
         }
     }
     // raw_tx clone dropped here.
@@ -529,6 +492,39 @@ async fn fetch_bytes(client: &reqwest::Client, url: &str) -> Result<Option<Bytes
         .with_context(|| format!("reading body of {url}"))?;
 
     Ok(Some(bytes))
+}
+
+/// Calls [`fetch_bytes`] with exponential back-off retry on transient errors.
+///
+/// `Ok(None)` and `Ok(Some(_))` are passed through directly to the caller.
+/// Only `Err` results trigger a retry; after [`MAX_RETRIES`] the final error
+/// is logged as WARN and `Ok(None)` is returned so the job is skipped.
+async fn fetch_bytes_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+    idx: usize,
+    total: usize,
+) -> Result<Option<Bytes>> {
+    let mut last_err = anyhow::anyhow!("no attempts made");
+
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay = RETRY_BASE_DELAY * 2u32.pow(attempt - 1);
+            eprintln!(
+                "  [{idx:>4}/{total}] retry {attempt}/{MAX_RETRIES} in {}s — {url}",
+                delay.as_secs(),
+            );
+            sleep(delay).await;
+        }
+
+        match fetch_bytes(client, url).await {
+            Ok(result) => return Ok(result),
+            Err(e) => last_err = e,
+        }
+    }
+
+    eprintln!("  [{idx:>4}/{total}] WARN {url} (gave up after {MAX_RETRIES} retries): {last_err:#}");
+    Err(last_err)
 }
 
 // ── Event extraction ──────────────────────────────────────────────────────────
