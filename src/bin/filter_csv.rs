@@ -96,21 +96,14 @@ fn main() -> Result<()> {
     let rows = filter_fork_only_actors(rows);
 
     let surviving = rows.len();
-    let removed_pct = if total == 0 {
-        0.0
-    } else {
-        100.0 * (total - surviving) as f64 / total as f64
-    };
-    let surviving_pct = 100.0 - removed_pct;
+    let removed_pct = if total == 0 { 0.0 } else { 100.0 * (total - surviving) as f64 / total as f64 };
 
     let output = output_path(&args.input)?;
     write_csv(rows, &output)?;
 
     eprintln!(
-        "  [total]  {:>8} removed ({:.1}%),  {:>8}",
-        total - surviving,
-        removed_pct,
-        surviving,
+        "  [total]  {:>8} removed ({:.1}%),  {:>8} remaining",
+        total - surviving, removed_pct, surviving,
     );
 
     Ok(())
