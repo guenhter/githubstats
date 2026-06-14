@@ -37,10 +37,10 @@
 //!   owner/name,PullRequestEvent,closed,Rust,42
 
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use chrono::NaiveDate;
 use clap::Parser;
 use flate2::read::GzDecoder;
-use bytes::Bytes;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -174,10 +174,16 @@ async fn main() -> Result<()> {
     // ── Spawn all pipeline stages ─────────────────────────────────────────────
     let mut set = JoinSet::new();
 
-    set.spawn(populate_download_jobs(jobs_tx, args.year, args.month, args.limit));
+    set.spawn(populate_download_jobs(
+        jobs_tx, args.year, args.month, args.limit,
+    ));
 
     for _ in 0..args.parallelism {
-        set.spawn(download_events_archive(jobs_rx.clone(), raw_tx.clone(), client.clone()));
+        set.spawn(download_events_archive(
+            jobs_rx.clone(),
+            raw_tx.clone(),
+            client.clone(),
+        ));
     }
     drop(raw_tx); // only the worker clones remain
 
@@ -224,11 +230,17 @@ async fn populate_download_jobs(
     let days_in_month = (next_month_first - first).num_days() as u32;
 
     let total_urls = days_in_month * 24;
-    let total = limit.unwrap_or(total_urls as usize).min(total_urls as usize);
+    let total = limit
+        .unwrap_or(total_urls as usize)
+        .min(total_urls as usize);
 
     eprintln!(
         "Fetching {total} archives for {year}-{month:02}{}",
-        if limit.is_some() { " (sample mode)" } else { "" },
+        if limit.is_some() {
+            " (sample mode)"
+        } else {
+            ""
+        },
     );
 
     let mut idx = 0usize;
@@ -238,9 +250,8 @@ async fn populate_download_jobs(
             if idx > total {
                 break 'outer;
             }
-            let url = format!(
-                "https://data.gharchive.org/{year}-{month:02}-{day:02}-{hour}.json.gz"
-            );
+            let url =
+                format!("https://data.gharchive.org/{year}-{month:02}-{day:02}-{hour}.json.gz");
             tx.send(DownloadJob { url, idx, total })
                 .await
                 .context("jobs channel closed early")?;
@@ -266,12 +277,28 @@ async fn download_events_archive(
         match fetch_bytes_with_retry(&client, &job.url, job.idx, job.total).await {
             Err(_) => {} // already logged in fetch_bytes_with_retry
             Ok(None) => {
-                eprintln!("  [{:>4}/{}] 404 (skipped) — {}", job.idx, job.total, job.url);
+                eprintln!(
+                    "  [{:>4}/{}] 404 (skipped) — {}",
+                    job.idx, job.total, job.url
+                );
             }
             Ok(Some(data)) => {
-                eprintln!("  [{:>4}/{}] {} — {} bytes", job.idx, job.total, job.url, data.len());
+                eprintln!(
+                    "  [{:>4}/{}] {} — {} bytes",
+                    job.idx,
+                    job.total,
+                    job.url,
+                    data.len()
+                );
                 // If the decompress stage has closed, just move on.
-                let _ = raw_tx.send(RawBytes { url: job.url.clone(), idx: job.idx, total: job.total, data }).await;
+                let _ = raw_tx
+                    .send(RawBytes {
+                        url: job.url.clone(),
+                        idx: job.idx,
+                        total: job.total,
+                        data,
+                    })
+                    .await;
             }
         }
     }
@@ -287,14 +314,26 @@ async fn download_events_archive(
 /// Runs synchronously — intended to be spawned via [`task::spawn_blocking`]
 /// so it executes on tokio's blocking thread pool, leaving the async executor
 /// free for network I/O.
-fn decompress_events_archive(raw_rx: async_channel::Receiver<RawBytes>, events_tx: mpsc::Sender<RawEvent>) -> Result<()> {
+fn decompress_events_archive(
+    raw_rx: async_channel::Receiver<RawBytes>,
+    events_tx: mpsc::Sender<RawEvent>,
+) -> Result<()> {
     while let Ok(raw) = raw_rx.recv_blocking() {
         let decoder = GzDecoder::new(raw.data.as_ref());
         let reader = BufReader::new(decoder);
         let mut sent = 0usize;
 
         for line in reader.lines() {
-            let line = line.with_context(|| format!("decompress error in {}", raw.url))?;
+            let line = match line {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!(
+                        "  [{:>4}/{}] WARN decompress error in {} — {e:#}",
+                        raw.idx, raw.total, raw.url
+                    );
+                    break;
+                }
+            };
             if line.is_empty() {
                 continue;
             }
@@ -311,7 +350,10 @@ fn decompress_events_archive(raw_rx: async_channel::Receiver<RawBytes>, events_t
             sent += 1;
         }
 
-        eprintln!("  [{:>4}/{}] {} — {sent} events", raw.idx, raw.total, raw.url);
+        eprintln!(
+            "  [{:>4}/{}] {} — {sent} events",
+            raw.idx, raw.total, raw.url
+        );
     }
     // events_tx clone dropped here; last decompress worker drop closes the events channel.
     Ok(())
@@ -523,7 +565,9 @@ async fn fetch_bytes_with_retry(
         }
     }
 
-    eprintln!("  [{idx:>4}/{total}] WARN {url} (gave up after {MAX_RETRIES} retries): {last_err:#}");
+    eprintln!(
+        "  [{idx:>4}/{total}] WARN {url} (gave up after {MAX_RETRIES} retries): {last_err:#}"
+    );
     Err(last_err)
 }
 
