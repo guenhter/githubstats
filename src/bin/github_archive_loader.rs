@@ -8,9 +8,15 @@
 //!   populate_download_jobs  — pushes one DownloadJob (URL + index) per hour
 //!                             into the job channel, then closes it.
 //!
-//!   download  (N workers)   — each worker pulls jobs from a shared job queue,
-//!                             fetches the `.json.gz`, decompresses it, parses
-//!                             every JSON line, and forwards [`RawEvent`]s.
+//!   download  (N async)     — each worker pulls jobs, fetches the `.json.gz`
+//!                             body, and forwards raw compressed bytes.
+//!                             Pure network I/O — no blocking work.
+//!
+//!   decompress  (N blocking) — each worker receives compressed bytes,
+//!                              decompresses with flate2, parses JSON lines,
+//!                              and forwards [`RawEvent`]s.
+//!                              Runs on tokio's blocking thread pool, keeping
+//!                              the async executor free for network I/O.
 //!
 //!   filter_events           — drops bot actors (login contains "bot") and
 //!                             high-volume actors (> 1 000 events/month);
@@ -34,6 +40,7 @@ use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use clap::Parser;
 use flate2::read::GzDecoder;
+use bytes::Bytes;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -64,6 +71,8 @@ const RETRY_BASE_DELAY: Duration = Duration::from_secs(2);
 
 /// Channel capacities — bound each stage to limit peak RAM.
 const JOBS_CAPACITY: usize = 256;
+/// Raw compressed bytes: keep a few in flight to absorb download/decompress jitter.
+const RAW_BYTES_CAPACITY: usize = 16;
 const EVENTS_CAPACITY: usize = 8_192;
 const FILTERED_CAPACITY: usize = 8_192;
 const WRITER_CAPACITY: usize = 4_096;
@@ -106,6 +115,14 @@ struct DownloadJob {
     total: usize,
 }
 
+/// Compressed `.json.gz` body received from one archive, ready to decompress.
+struct RawBytes {
+    url: String,
+    idx: usize,
+    total: usize,
+    data: Bytes,
+}
+
 /// Minimal fields extracted from one raw GitHub Archive event line.
 struct RawEvent {
     /// Actor login — kept through the filter stage; dropped in output.
@@ -135,8 +152,9 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // ── Channels ─────────────────────────────────────────────────────────────
-    // jobs: MPMC so every download worker can hold its own Receiver clone.
+    // jobs + raw_bytes: MPMC (async_channel) so N workers can each hold a clone.
     let (jobs_tx, jobs_rx) = async_channel::bounded::<DownloadJob>(JOBS_CAPACITY);
+    let (raw_tx, raw_rx) = async_channel::bounded::<RawBytes>(RAW_BYTES_CAPACITY);
     let (events_tx, events_rx) = mpsc::channel::<RawEvent>(EVENTS_CAPACITY);
     let (filtered_tx, filtered_rx) = mpsc::channel::<RawEvent>(FILTERED_CAPACITY);
     let (writer_tx, writer_rx) = mpsc::channel::<OutputRow>(WRITER_CAPACITY);
@@ -159,9 +177,17 @@ async fn main() -> Result<()> {
     set.spawn(populate_download_jobs(jobs_tx, args.year, args.month, args.limit));
 
     for _ in 0..args.parallelism {
-        set.spawn(download(jobs_rx.clone(), events_tx.clone(), client.clone()));
+        set.spawn(download_events_archive(jobs_rx.clone(), raw_tx.clone(), client.clone()));
     }
-    drop(events_tx); // only the worker clones remain
+    drop(raw_tx); // only the worker clones remain
+
+    for _ in 0..args.parallelism {
+        // decompress runs on the blocking thread pool — CPU-bound work.
+        let raw_rx = raw_rx.clone();
+        let events_tx = events_tx.clone();
+        set.spawn_blocking(move || decompress_events_archive(raw_rx, events_tx));
+    }
+    drop(events_tx); // only the decompress-worker clones remain
 
     set.spawn(filter_events(events_rx, filtered_tx));
     set.spawn(collect_events(filtered_rx, writer_tx));
@@ -227,17 +253,16 @@ async fn populate_download_jobs(
 // ── Stage 2: download workers ─────────────────────────────────────────────────
 
 /// Worker: repeatedly pulls a [`DownloadJob`] from the MPMC job channel,
-/// fetches the `.json.gz`, decompresses it on a blocking thread, parses every
-/// JSON line, and forwards each extracted [`RawEvent`] to `events_tx`.
+/// fetches the raw compressed `.json.gz` body, and forwards it as [`RawBytes`].
 ///
-/// Transient failures (network errors, non-404 HTTP errors) are retried up to
-/// [`MAX_RETRIES`] times with exponential back-off before being logged as WARN.
+/// Purely network I/O — no decompression or parsing here.
+/// Transient failures are retried up to [`MAX_RETRIES`] times with exponential
+/// back-off before being logged as WARN.
 ///
 /// Stops when the channel is closed and empty (all jobs consumed).
-/// Each worker holds its own `Receiver` clone — no locking required.
-async fn download(
+async fn download_events_archive(
     jobs_rx: async_channel::Receiver<DownloadJob>,
-    events_tx: mpsc::Sender<RawEvent>,
+    raw_tx: async_channel::Sender<RawBytes>,
     client: reqwest::Client,
 ) -> Result<()> {
     while let Ok(job) = jobs_rx.recv().await {
@@ -249,31 +274,34 @@ async fn download(
                 let delay = RETRY_BASE_DELAY * 2u32.pow(attempt - 1);
                 eprintln!(
                     "  [{:>4}/{}] retry {attempt}/{MAX_RETRIES} in {}s — {}",
-                    job.idx,
-                    job.total,
-                    delay.as_secs(),
-                    job.url,
+                    job.idx, job.total, delay.as_secs(), job.url,
                 );
                 sleep(delay).await;
             }
 
-            match fetch_and_send(&client, job.url.as_str(), events_tx.clone()).await {
-                Ok(n) => {
+            match fetch_bytes(&client, &job.url).await {
+                Ok(None) => {
+                    // 404 — archive not yet published, skip silently.
+                    eprintln!("  [{:>4}/{}] 404 (skipped) — {}", job.idx, job.total, job.url);
+                    succeeded = true;
+                    break;
+                }
+                Ok(Some(data)) => {
                     let retry_note = if attempt > 0 {
                         format!(" (after {attempt} retr{})", if attempt == 1 { "y" } else { "ies" })
                     } else {
                         String::new()
                     };
                     eprintln!(
-                        "  [{:>4}/{}] {} — {n} events{retry_note}",
-                        job.idx, job.total, job.url,
+                        "  [{:>4}/{}] {} — {} bytes{retry_note}",
+                        job.idx, job.total, job.url, data.len(),
                     );
+                    // If the decompress stage has closed, just move on.
+                    let _ = raw_tx.send(RawBytes { url: job.url.clone(), idx: job.idx, total: job.total, data }).await;
                     succeeded = true;
                     break;
                 }
-                Err(e) => {
-                    last_err = e;
-                }
+                Err(e) => last_err = e,
             }
         }
 
@@ -284,11 +312,49 @@ async fn download(
             );
         }
     }
-    // events_tx clone dropped here; last worker drop closes the events channel.
+    // raw_tx clone dropped here.
     Ok(())
 }
 
-// ── Stage 3: filter events ────────────────────────────────────────────────────
+// ── Stage 3: decompress workers ───────────────────────────────────────────────
+
+/// Worker: receives raw compressed [`RawBytes`], decompresses with flate2,
+/// parses every JSON line, and forwards each [`RawEvent`] to `events_tx`.
+///
+/// Runs synchronously — intended to be spawned via [`task::spawn_blocking`]
+/// so it executes on tokio's blocking thread pool, leaving the async executor
+/// free for network I/O.
+fn decompress_events_archive(raw_rx: async_channel::Receiver<RawBytes>, events_tx: mpsc::Sender<RawEvent>) -> Result<()> {
+    while let Ok(raw) = raw_rx.recv_blocking() {
+        let decoder = GzDecoder::new(raw.data.as_ref());
+        let reader = BufReader::new(decoder);
+        let mut sent = 0usize;
+
+        for line in reader.lines() {
+            let line = line.with_context(|| format!("decompress error in {}", raw.url))?;
+            if line.is_empty() {
+                continue;
+            }
+            let value: Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let Some(event) = extract_event(&value) else {
+                continue;
+            };
+            if events_tx.blocking_send(event).is_err() {
+                break; // downstream closed
+            }
+            sent += 1;
+        }
+
+        eprintln!("  [{:>4}/{}] {} — {sent} events", raw.idx, raw.total, raw.url);
+    }
+    // events_tx clone dropped here; last decompress worker drop closes the events channel.
+    Ok(())
+}
+
+// ── Stage 4: filter events ────────────────────────────────────────────────────
 
 /// Reads [`RawEvent`]s, drops bot actors (login contains "bot", case-insensitive)
 /// and high-volume actors (more than 1 000 events in the month), and forwards
@@ -331,7 +397,7 @@ async fn filter_events(mut rx: mpsc::Receiver<RawEvent>, tx: mpsc::Sender<RawEve
     Ok(())
 }
 
-// ── Stage 4: collect / aggregate events ──────────────────────────────────────
+// ── Stage 5: collect / aggregate events ──────────────────────────────────────
 
 /// Aggregates events into per-(repo, event_type, action) counts, then sends
 /// one [`OutputRow`] per unique key to the writer.
@@ -391,7 +457,7 @@ async fn collect_events(
     Ok(())
 }
 
-// ── Stage 5: write CSV ────────────────────────────────────────────────────────
+// ── Stage 6: write CSV ────────────────────────────────────────────────────────
 
 /// Receives [`OutputRow`]s and writes them as RFC 4180 CSV to `path`.
 ///
@@ -438,23 +504,13 @@ async fn write_csv(mut rx: mpsc::Receiver<OutputRow>, path: PathBuf) -> Result<(
     writer_task.await.context("writer task panicked")?
 }
 
-// ── Fetching & parsing ────────────────────────────────────────────────────────
+// ── Fetching ──────────────────────────────────────────────────────────────────
 
-/// Downloads one `.json.gz` archive, decompresses it on a blocking thread,
-/// parses every event line, and sends each [`RawEvent`] to `tx`.
+/// Fetches one `.json.gz` archive and returns the raw compressed bytes.
 ///
-/// The response body is consumed chunk-by-chunk with a per-chunk idle timeout
-/// ([`CHUNK_IDLE_TIMEOUT`]).  If no bytes arrive within that window the
-/// function returns an error so the caller can retry, instead of silently
-/// hanging until the OS eventually kills the socket.
-///
-/// Returns the number of events sent.
-/// A 404 is treated as a soft warning (archive not yet published) and returns `Ok(0)`.
-async fn fetch_and_send(
-    client: &reqwest::Client,
-    url: &str,
-    tx: mpsc::Sender<RawEvent>,
-) -> Result<usize> {
+/// Returns `Ok(None)` on 404 (archive not yet published).
+/// Returns `Err` on any other network or HTTP error so the caller can retry.
+async fn fetch_bytes(client: &reqwest::Client, url: &str) -> Result<Option<Bytes>> {
     let response = client
         .get(url)
         .send()
@@ -462,53 +518,17 @@ async fn fetch_and_send(
         .with_context(|| format!("GET {url}"))?;
 
     if response.status() == reqwest::StatusCode::NOT_FOUND {
-        return Ok(0);
+        return Ok(None);
     }
 
-    let response = response
+    let bytes = response
         .error_for_status()
-        .with_context(|| format!("HTTP error for {url}"))?;
-
-    // bytes().await is the idiomatic way to read the full body.
-    // Stall detection is handled by read_timeout on the ClientBuilder —
-    // it resets after each successful read, so it catches genuinely stuck
-    // connections without penalising legitimately slow large downloads.
-    let body = response
+        .with_context(|| format!("HTTP error for {url}"))?
         .bytes()
         .await
         .with_context(|| format!("reading body of {url}"))?;
 
-    let url_owned = url.to_string();
-
-    // Decompress and parse on the blocking thread pool — CPU/IO-bound work.
-    let count = task::spawn_blocking(move || -> Result<usize> {
-        let decoder = GzDecoder::new(body.as_ref());
-        let reader = BufReader::new(decoder);
-        let mut sent = 0usize;
-
-        for line in reader.lines() {
-            let line = line.with_context(|| format!("decompress error in {url_owned}"))?;
-            if line.is_empty() {
-                continue;
-            }
-            let value: Value = match serde_json::from_str(&line) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            let Some(event) = extract_event(&value) else {
-                continue;
-            };
-            if tx.blocking_send(event).is_err() {
-                break; // downstream closed
-            }
-            sent += 1;
-        }
-        Ok(sent)
-    })
-    .await
-    .context("spawn_blocking panicked")??;
-
-    Ok(count)
+    Ok(Some(bytes))
 }
 
 // ── Event extraction ──────────────────────────────────────────────────────────

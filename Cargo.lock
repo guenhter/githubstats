@@ -448,6 +448,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "bytes",
  "chrono",
  "clap",
  "flate2",
