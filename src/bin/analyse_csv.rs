@@ -41,10 +41,8 @@ fn main() -> Result<()> {
     // Structural / field-level issues
     let mut bad_rows: u64 = 0;           // wrong number of fields
     let mut empty_repo: u64 = 0;
-    let mut no_slash_repo: u64 = 0;
     let mut empty_event_type: u64 = 0;
     let mut zero_count: u64 = 0;
-    let mut negative_count: u64 = 0;    // count field parses as negative (shouldn't happen for u64 but guard)
     let mut non_numeric_count: u64 = 0;
 
     // Language coverage
@@ -141,7 +139,7 @@ fn main() -> Result<()> {
         if count > 500 {
             extreme_rows.push((count, repo.to_string(), event_type.to_string(), language.to_string()));
             if extreme_rows.len() > extreme_cap {
-                extreme_rows.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+                extreme_rows.sort_unstable_by_key(|b| std::cmp::Reverse(b.0));
                 extreme_rows.truncate(extreme_cap / 2);
             }
         }
@@ -150,7 +148,6 @@ fn main() -> Result<()> {
         if repo.is_empty() {
             empty_repo += 1;
         } else if !repo.contains('/') {
-            no_slash_repo += 1;
             repo_no_owner += 1;
         } else {
             let parts: Vec<&str> = repo.splitn(2, '/').collect();
@@ -224,7 +221,7 @@ fn main() -> Result<()> {
     let mut repo_events_sorted: Vec<(&String, &u64)> = repo_event_count.iter().collect();
     repo_events_sorted.sort_unstable_by(|a, b| b.1.cmp(a.1));
 
-    extreme_rows.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+    extreme_rows.sort_unstable_by_key(|b| std::cmp::Reverse(b.0));
     extreme_rows.truncate(top_n);
 
     // ── Print report ──────────────────────────────────────────────────────────
