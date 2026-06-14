@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR=$(dirname "$(realpath "$0")")
 
 docker run \
     --restart on-failure \
-    -v "$DIR:/workspace" \
+    -v "$SCRIPT_DIR:/workspace" \
     -w /workspace \
     ubuntu:latest \
     bash load.sh
