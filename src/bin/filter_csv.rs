@@ -13,9 +13,31 @@
 //!   filter_bots               — drops rows where the actor name contains "bot"
 //!                               (case-insensitive).
 //!
+//!   filter_ci_actors          — drops rows whose actor name matches known CI /
+//!                               automation tools not caught by "bot" alone
+//!                               (e.g. dependabot, renovate, github-actions, …).
+//!
 //!   filter_high_volume_actors — drops rows belonging to actors whose total
 //!                               event count across the whole file exceeds a
 //!                               threshold (default: 1 000).
+//!
+//!   filter_deleted_repos      — drops rows whose repo name looks like an
+//!                               auto-generated placeholder left by a deleted
+//!                               account (owner or name is a raw git SHA or UUID).
+//!
+//!   filter_empty_repos        — drops rows belonging to repos that have no
+//!                               PushEvent or PullRequestEvent in the dataset.
+//!                               These repos have no code activity and carry no
+//!                               language signal.
+//!
+//!   filter_fork_only_actors   — drops rows belonging to actors whose entire
+//!                               activity in the dataset consists solely of
+//!                               ForkEvents.
+//!
+//!   filter_single_event_repos — drops rows belonging to repos whose total
+//!                               event count across all actors is exactly 1.
+//!                               The vast majority are one-off noise with no
+//!                               analytical value.
 //!
 //! Usage:
 //!   filter_csv --input archive-202605.csv
@@ -26,7 +48,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -62,10 +84,15 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let rows = read_csv(&args.input)?;
-    eprintln!("  [read]   {} rows", rows.len());
+    eprintln!("  [read]                         {:>8} rows", rows.len());
 
     let rows = filter_bots(rows);
+    let rows = filter_ci_actors(rows);
     let rows = filter_high_volume_actors(rows, args.actor_event_limit);
+    let rows = filter_deleted_repos(rows);
+    let rows = filter_empty_repos(rows);
+    let rows = filter_fork_only_actors(rows);
+    let rows = filter_single_event_repos(rows);
 
     let output = output_path(&args.input)?;
     write_csv(rows, &output)?;
@@ -84,11 +111,47 @@ fn filter_bots(rows: Vec<Row>) -> Vec<Row> {
         .into_iter()
         .filter(|r| !r.actor.to_ascii_lowercase().contains("bot"))
         .collect();
-    eprintln!(
-        "  [filter_bots]                {} removed, {} remaining",
-        before - rows.len(),
-        rows.len(),
-    );
+    log_filter("filter_bots", before, rows.len(), "");
+    rows
+}
+
+/// Drops rows whose actor name matches known CI / automation tools that do not
+/// happen to contain "bot" in their name.
+///
+/// Matching is case-insensitive substring, so e.g. "github-actions" catches
+/// both `github-actions` and `github-actions[bot]` (the latter also caught by
+/// `filter_bots`, but the overlap is harmless).
+fn filter_ci_actors(rows: Vec<Row>) -> Vec<Row> {
+    const CI_SUBSTRINGS: &[&str] = &[
+        "github-actions",
+        "dependabot",
+        "renovate",
+        "codecov",
+        "snyk",
+        "deepsource",
+        "sonarcloud",
+        "greenkeeper",
+        "imgbot",
+        "allcontributors",
+        "semantic-release",
+        "release-please",
+        "pre-commit-ci",
+        "lgtm-com",
+        "netlify",
+        "vercel",
+        "stale[",
+        "copilot",
+    ];
+
+    let before = rows.len();
+    let rows: Vec<Row> = rows
+        .into_iter()
+        .filter(|r| {
+            let actor_lc = r.actor.to_ascii_lowercase();
+            !CI_SUBSTRINGS.iter().any(|s| actor_lc.contains(s))
+        })
+        .collect();
+    log_filter("filter_ci_actors", before, rows.len(), "");
     rows
 }
 
@@ -109,13 +172,132 @@ fn filter_high_volume_actors(rows: Vec<Row>, limit: u64) -> Vec<Row> {
         .filter(|r| actor_totals[&r.actor] <= limit)
         .collect();
 
-    eprintln!(
-        "  [filter_high_volume_actors]  {} removed, {} remaining  (limit={})",
-        before - rows.len(),
-        rows.len(),
-        limit,
-    );
+    log_filter("filter_high_volume_actors", before, rows.len(), &format!("limit={limit}"));
     rows
+}
+
+/// Drops rows whose repo name looks like a deleted-account placeholder.
+///
+/// When a GitHub account is deleted, repos it owned are sometimes renamed to
+/// a raw SHA-like or UUID-like slug internally. We detect:
+///   - owner or repo-name segment that is a 40-character hex string (git SHA)
+///   - owner or repo-name segment that matches a UUID (8-4-4-4-12 hex)
+fn filter_deleted_repos(rows: Vec<Row>) -> Vec<Row> {
+    let before = rows.len();
+    let rows: Vec<Row> = rows
+        .into_iter()
+        .filter(|r| !looks_like_deleted_repo(&r.repo))
+        .collect();
+    log_filter("filter_deleted_repos", before, rows.len(), "");
+    rows
+}
+
+fn looks_like_deleted_repo(repo: &str) -> bool {
+    let Some((owner, name)) = repo.split_once('/') else {
+        return false;
+    };
+    is_sha_like(owner) || is_sha_like(name) || is_uuid_like(owner) || is_uuid_like(name)
+}
+
+/// Returns true for 40-character lowercase hex strings (git SHA1).
+fn is_sha_like(s: &str) -> bool {
+    s.len() == 40 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Returns true for strings matching the UUID format (8-4-4-4-12 hex).
+fn is_uuid_like(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 36 {
+        return false;
+    }
+    let is_hex = |c: u8| c.is_ascii_hexdigit();
+    b[8] == b'-' && b[13] == b'-' && b[18] == b'-' && b[23] == b'-'
+        && b[..8].iter().all(|&c| is_hex(c))
+        && b[9..13].iter().all(|&c| is_hex(c))
+        && b[14..18].iter().all(|&c| is_hex(c))
+        && b[19..23].iter().all(|&c| is_hex(c))
+        && b[24..].iter().all(|&c| is_hex(c))
+}
+
+/// Drops rows belonging to repos that have no PushEvent or PullRequestEvent
+/// anywhere in the dataset.
+///
+/// Repos with only WatchEvents, ForkEvents, IssuesEvents, etc. and no code
+/// activity carry no language signal and are typically empty or archived repos.
+fn filter_empty_repos(rows: Vec<Row>) -> Vec<Row> {
+    let before = rows.len();
+
+    let active_repos: HashSet<String> = rows
+        .iter()
+        .filter(|r| r.event_type == "PushEvent" || r.event_type == "PullRequestEvent")
+        .map(|r| r.repo.clone())
+        .collect();
+
+    let rows: Vec<Row> = rows
+        .into_iter()
+        .filter(|r| active_repos.contains(&r.repo))
+        .collect();
+
+    log_filter("filter_empty_repos", before, rows.len(), "");
+    rows
+}
+
+/// Drops rows belonging to actors whose entire activity in the dataset is
+/// exclusively ForkEvents — they never pushed, opened a PR, filed an issue,
+/// or did anything else.
+///
+/// These are typically users who forked a repo out of curiosity and never
+/// touched it; they add no signal to language or activity analysis.
+fn filter_fork_only_actors(rows: Vec<Row>) -> Vec<Row> {
+    let before = rows.len();
+
+    let actors_with_non_fork: HashSet<String> = rows
+        .iter()
+        .filter(|r| r.event_type != "ForkEvent")
+        .map(|r| r.actor.clone())
+        .collect();
+
+    let rows: Vec<Row> = rows
+        .into_iter()
+        .filter(|r| actors_with_non_fork.contains(&r.actor))
+        .collect();
+
+    log_filter("filter_fork_only_actors", before, rows.len(), "");
+    rows
+}
+
+/// Drops rows belonging to repos whose total event count (sum of `count`
+/// across all actors and event types) is exactly 1.
+///
+/// These one-off repos make up ~56% of all rows but contribute negligible
+/// signal — a single event from an unknown repo tells us nothing useful about
+/// language trends.
+fn filter_single_event_repos(rows: Vec<Row>) -> Vec<Row> {
+    let before = rows.len();
+
+    let mut repo_totals: HashMap<String, u64> = HashMap::new();
+    for r in &rows {
+        *repo_totals.entry(r.repo.clone()).or_insert(0) += r.count;
+    }
+
+    let rows: Vec<Row> = rows
+        .into_iter()
+        .filter(|r| repo_totals[&r.repo] > 1)
+        .collect();
+
+    log_filter("filter_single_event_repos", before, rows.len(), "");
+    rows
+}
+
+// ── Logging helper ────────────────────────────────────────────────────────────
+
+fn log_filter(name: &str, before: usize, after: usize, note: &str) {
+    let note_str = if note.is_empty() { String::new() } else { format!("  ({note})") };
+    eprintln!(
+        "  [{name:<30}]  {:>8} removed, {:>8} remaining{note_str}",
+        before - after,
+        after,
+    );
 }
 
 // ── I/O ───────────────────────────────────────────────────────────────────────
@@ -186,7 +368,7 @@ fn write_csv(rows: Vec<Row>, path: &Path) -> Result<()> {
     }
 
     w.flush().context("flush")?;
-    eprintln!("  [write]  {} rows written to {path:?}", rows.len());
+    eprintln!("  [write]                        {:>8} rows written to {path:?}", rows.len());
     Ok(())
 }
 
