@@ -11,7 +11,7 @@ for year in "${YEARS[@]}"; do
 
         echo "--- ${year}-${month} ---"
 
-        if [[ -f "$archive" ]]; then
+        if [[ -f "$archive" ]] && [[ $(wc -l < "$archive") -gt 1 ]]; then
             echo "  [skip] $archive already exists"
         else
             ./github_archive_loader --year "$year" --month "$((10#$month))" --parallelism 10 --output "$archive"
