@@ -37,12 +37,12 @@ use flate2::read::GzDecoder;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Cursor, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::task::{self, JoinSet};
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 
 const USER_AGENT: &str = "githubstats/0.1 (github-archive-loader)";
 
@@ -50,9 +50,12 @@ const USER_AGENT: &str = "githubstats/0.1 (github-archive-loader)";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Per-request timeout covers the full fetch including body download.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
-/// If no body chunk arrives within this window the download is aborted.
-/// This catches stalled TCP connections that never close.
-const CHUNK_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+/// If no bytes arrive within this window a read is aborted.
+/// reqwest's read_timeout resets after each successful read, so this
+/// catches stalled connections without penalising legitimately slow ones.
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// TCP keepalive: send a probe after this idle period.
+const TCP_KEEPALIVE: Duration = Duration::from_secs(30);
 
 /// Retry settings for transient download failures.
 const MAX_RETRIES: u32 = 4;
@@ -142,6 +145,8 @@ async fn main() -> Result<()> {
         .user_agent(USER_AGENT)
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)
+        .read_timeout(READ_TIMEOUT)
+        .tcp_keepalive(TCP_KEEPALIVE)
         .build()
         .context("failed to build HTTP client")?;
 
@@ -460,36 +465,24 @@ async fn fetch_and_send(
         return Ok(0);
     }
 
-    let mut response = response
+    let response = response
         .error_for_status()
         .with_context(|| format!("HTTP error for {url}"))?;
 
-    // Stream the body chunk-by-chunk so a stalled connection is detected
-    // within CHUNK_IDLE_TIMEOUT rather than hanging until the OS gives up.
-    // chunk() is the idiomatic reqwest API for this — no extra feature flag,
-    // errors surface naturally, and it does not consume the response upfront.
-    let mut body: Vec<u8> = Vec::new();
-    loop {
-        match timeout(CHUNK_IDLE_TIMEOUT, response.chunk()).await {
-            Ok(Ok(Some(chunk))) => body.extend_from_slice(&chunk),
-            Ok(Ok(None)) => break, // stream finished cleanly
-            Ok(Err(e)) => {
-                return Err(e).with_context(|| format!("reading body of {url}"));
-            }
-            Err(_elapsed) => {
-                anyhow::bail!(
-                    "body stalled for >{:.0}s on {url}",
-                    CHUNK_IDLE_TIMEOUT.as_secs_f64()
-                );
-            }
-        }
-    }
+    // bytes().await is the idiomatic way to read the full body.
+    // Stall detection is handled by read_timeout on the ClientBuilder —
+    // it resets after each successful read, so it catches genuinely stuck
+    // connections without penalising legitimately slow large downloads.
+    let body = response
+        .bytes()
+        .await
+        .with_context(|| format!("reading body of {url}"))?;
 
     let url_owned = url.to_string();
 
     // Decompress and parse on the blocking thread pool — CPU/IO-bound work.
     let count = task::spawn_blocking(move || -> Result<usize> {
-        let decoder = GzDecoder::new(Cursor::new(body));
+        let decoder = GzDecoder::new(body.as_ref());
         let reader = BufReader::new(decoder);
         let mut sent = 0usize;
 
