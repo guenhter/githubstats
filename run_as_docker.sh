@@ -12,4 +12,4 @@ docker container run \
     -v "$SCRIPT_DIR:/workspace" \
     -w /workspace \
     ubuntu:latest \
-    bash load.sh
+    bash -c "apt-get update -qq && apt-get install -y -qq ca-certificates && bash load.sh"
