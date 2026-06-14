@@ -1,0 +1,141 @@
+{
+  "id": "5562772614",
+  "type": "IssuesEvent",
+  "actor": {
+    "id": 136380088,
+    "login": "sboagy",
+    "display_login": "sboagy",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/sboagy",
+    "avatar_url": "https://avatars.githubusercontent.com/u/136380088?"
+  },
+  "repo": {
+    "id": 653911450,
+    "name": "sboagy/tunetrees",
+    "url": "https://api.github.com/repos/sboagy/tunetrees"
+  },
+  "payload": {
+    "action": "closed",
+    "issue": {
+      "url": "https://api.github.com/repos/sboagy/tunetrees/issues/338",
+      "repository_url": "https://api.github.com/repos/sboagy/tunetrees",
+      "labels_url": "https://api.github.com/repos/sboagy/tunetrees/issues/338/labels{/name}",
+      "comments_url": "https://api.github.com/repos/sboagy/tunetrees/issues/338/comments",
+      "events_url": "https://api.github.com/repos/sboagy/tunetrees/issues/338/events",
+      "html_url": "https://github.com/sboagy/tunetrees/issues/338",
+      "id": 3759139004,
+      "node_id": "I_kwDOJvnlms7gD-i8",
+      "number": 338,
+      "title": "Refactor: Isolate Sync Engine & Automate SQLite Schema Generation",
+      "user": {
+        "login": "sboagy",
+        "id": 136380088,
+        "node_id": "U_kgDOCCD-uA",
+        "avatar_url": "https://avatars.githubusercontent.com/u/136380088?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/sboagy",
+        "html_url": "https://github.com/sboagy",
+        "followers_url": "https://api.github.com/users/sboagy/followers",
+        "following_url": "https://api.github.com/users/sboagy/following{/other_user}",
+        "gists_url": "https://api.github.com/users/sboagy/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/sboagy/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/sboagy/subscriptions",
+        "organizations_url": "https://api.github.com/users/sboagy/orgs",
+        "repos_url": "https://api.github.com/users/sboagy/repos",
+        "events_url": "https://api.github.com/users/sboagy/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/sboagy/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "labels": [
+        {
+          "id": 7311476648,
+          "node_id": "LA_kwDOJvnlms8AAAABs8xHqA",
+          "url": "https://api.github.com/repos/sboagy/tunetrees/labels/refactor",
+          "name": "refactor",
+          "color": "ededed",
+          "default": false,
+          "description": null
+        }
+      ],
+      "state": "closed",
+      "locked": false,
+      "assignee": null,
+      "assignees": [],
+      "milestone": {
+        "url": "https://api.github.com/repos/sboagy/tunetrees/milestones/2",
+        "html_url": "https://github.com/sboagy/tunetrees/milestone/2",
+        "labels_url": "https://api.github.com/repos/sboagy/tunetrees/milestones/2/labels",
+        "id": 13998292,
+        "node_id": "MI_kwDOJvnlms4A1ZjU",
+        "number": 2,
+        "title": "Alpha Release",
+        "description": "- [ ] Tune Import\n- [ ] Tune Editing\n- [ ] Popular Song catalog\n- [ ] Reasonable Documentation\n- [ ] User Setting",
+        "creator": {
+          "login": "sboagy",
+          "id": 136380088,
+          "node_id": "U_kgDOCCD-uA",
+          "avatar_url": "https://avatars.githubusercontent.com/u/136380088?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/sboagy",
+          "html_url": "https://github.com/sboagy",
+          "followers_url": "https://api.github.com/users/sboagy/followers",
+          "following_url": "https://api.github.com/users/sboagy/following{/other_user}",
+          "gists_url": "https://api.github.com/users/sboagy/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/sboagy/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/sboagy/subscriptions",
+          "organizations_url": "https://api.github.com/users/sboagy/orgs",
+          "repos_url": "https://api.github.com/users/sboagy/repos",
+          "events_url": "https://api.github.com/users/sboagy/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/sboagy/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "open_issues": 26,
+        "closed_issues": 38,
+        "state": "open",
+        "created_at": "2025-10-28T22:20:54Z",
+        "updated_at": "2026-01-01T00:00:01Z",
+        "due_on": "2026-02-02T00:00:00Z",
+        "closed_at": null
+      },
+      "comments": 0,
+      "created_at": "2025-12-24T04:04:49Z",
+      "updated_at": "2026-01-01T00:00:01Z",
+      "closed_at": "2026-01-01T00:00:00Z",
+      "active_lock_reason": null,
+      "sub_issues_summary": {
+        "total": 0,
+        "completed": 0,
+        "percent_completed": 0
+      },
+      "parent_issue_url": "https://api.github.com/repos/sboagy/tunetrees/issues/304",
+      "issue_dependencies_summary": {
+        "blocked_by": 0,
+        "total_blocked_by": 0,
+        "blocking": 0,
+        "total_blocking": 0
+      },
+      "body": "# Refactor: Isolate Sync Engine & Automate SQLite Schema Generation\n\n## Problem Statement\nThe current synchronization architecture between Supabase (Postgres) and the PWA (SQLite WASM) is becoming a maintenance bottleneck.\n1.  **Schema Drift:** Adding a single column requires manual updates in three places: Server Drizzle Schema, Client Drizzle Schema, and Sync Logic. This is error-prone and tedious.\n2.  **Fragility:** The sync logic is tightly coupled with application logic, making it difficult to test or improve the \"core\" sync mechanics without breaking UI features.\n3.  **Type Mismatches:** Manually maintaining type definitions between Postgres (native booleans/timestamps) and SQLite (integers) creates subtle bugs.\n\n## Proposed Solution: The \"Internal Platform\" Approach\n\nWe will refactor the sync infrastructure into an isolated \"internal library\" (`src/sync-engine`) and treat the local Postgres database as the Single Source of Truth for schema definitions.\n\n### 1. Automated Schema Generation\nInstead of writing `schema.sqlite.ts` manually, we will generate it via a script that introspects the local Postgres database.\n\n* **Source of Truth:** Local Postgres Docker container.\n* **Workflow:**\n    1.  Update Postgres Schema (Drizzle or SQL).\n    2.  Run `npm run codegen:schema`.\n    3.  Script inspects Postgres `information_schema`.\n    4.  Script overwrites `src/lib/db/schema.sqlite.ts` with correct type mappings (e.g., `boolean` -> `integer`).\n\n### 2. Sync Engine Isolation\nWe will move all sync-related code into a dedicated directory structure. This separates \"Mechanism\" from \"Policy\".\n\n```text\n/src\n  /sync-engine          <-- The \"Internal Library\"\n     /generator         <-- The codegen script\n     /tests             <-- Focused sync tests\n     client-sync.ts     <-- Client-side SyncService\n     worker-sync.ts     <-- Cloudflare Worker logic\n     types.ts           <-- Shared types\n```\n\n## Codegen Script (scripts/generate-sqlite-schema.js)\nHere is the proposed script to handle the introspection and type mapping:\n\n```JAVASCRIPT\nimport { Client } from 'pg';\nimport fs from 'fs';\nimport path from 'path';\n\n// CONFIG\nconst POSTGRES_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/postgres';\nconst OUTPUT_FILE = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.sqlite.ts');\n\n// Type Mapping: Postgres Type -> Drizzle SQLite Definition\nconst TYPE_MAP = {\n  'uuid': (col) => `text('${col}')`,\n  'text': (col) => `text('${col}')`,\n  'varchar': (col) => `text('${col}')`,\n  'integer': (col) => `integer('${col}')`,\n  'boolean': (col) => `integer('${col}', { mode: 'boolean' })`,\n  'timestamp with time zone': (col) => `integer('${col}', { mode: 'timestamp_ms' })`,\n  'timestamp without time zone': (col) => `integer('${col}', { mode: 'timestamp' })`,\n  'jsonb': (col) => `text('${col}', { mode: 'json' })`\n};\n\nasync function generate() {\n  const client = new Client({ connectionString: POSTGRES_URL });\n  await client.connect();\n\n  try {\n    // 1. Fetch Tables\n    const tablesRes = await client.query(`\n      SELECT table_name \n      FROM information_schema.tables \n      WHERE table_schema = 'public' \n      AND table_type = 'BASE TABLE'\n    `);\n\n    let fileContent = `// AUTO-GENERATED by scripts/generate-sqlite-schema.js\\n`;\n    fileContent += `// DO NOT EDIT MANUALLY\\n\\n`;\n    fileContent += `import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';\\n\\n`;\n\n    for (const row of tablesRes.rows) {\n      const tableName = row.table_name;\n      if (tableName.startsWith('drizzle')) continue; // Skip migrations table\n\n      // 2. Fetch Columns for Table\n      const colsRes = await client.query(`\n        SELECT column_name, data_type, is_nullable, column_default\n        FROM information_schema.columns \n        WHERE table_name = $1 AND table_schema = 'public'\n        ORDER BY ordinal_position\n      `, [tableName]);\n\n      fileContent += `export const ${tableName} = sqliteTable('${tableName}', {\\n`;\n\n      for (const col of colsRes.rows) {\n        const { column_name, data_type, is_nullable, column_default } = col;\n        \n        let def = '';\n        const mapper = TYPE_MAP[data_type] || TYPE_MAP['text']; // Fallback to text\n        \n        // Basic Definition\n        def = `  ${column_name}: ${mapper(column_name)}`;\n\n        // Primary Key (Simple Heuristic: if id and not nullable)\n        if (column_name === 'id') {\n           def += `.primaryKey()`;\n        } else if (is_nullable === 'NO') {\n           def += `.notNull()`;\n        }\n\n        // Defaults (Simplified)\n        if (column_default) {\n           if (column_default.includes('true')) def += `.default(true)`;\n           else if (column_default.includes('false')) def += `.default(false)`;\n        }\n\n        fileContent += `${def},\\n`;\n      }\n\n      fileContent += `});\\n\\n`;\n    }\n\n    fs.writeFileSync(OUTPUT_FILE, fileContent);\n    console.log(`✅ Generated SQLite schema at ${OUTPUT_FILE}`);\n\n  } catch (err) {\n    console.error(err);\n  } finally {\n    await client.end();\n  }\n}\n\ngenerate();\n\n```\n\n## Implementation Plan\n\n* [ ] **Phase 1: Setup Generator**\n  * [ ] Install `pg` driver (`npm install -D pg @types/pg`).\n  * [ ] Add `scripts/generate-sqlite-schema.js`.\n  * [ ] Add `codegen:schema` script to `package.json`.\n  * [ ] Run generator and verify `src/lib/db/schema.sqlite.ts` output matches expectations.\n  \n\n* [ ] **Phase 2: Isolate Code**\n  * [ ] Create `src/sync-engine` directory.\n  * [ ] Move `SyncService.ts` and related worker logic into this directory.\n  * [ ] Update imports in the main application to reference the new location.\n  \n\n* [ ] **Phase 3: Verify**\n  * [ ] Run existing tests.\n  * [ ] Verify that adding a dummy column in Postgres and running the script correctly updates the SQLite schema.\n  ",
+      "reactions": {
+        "url": "https://api.github.com/repos/sboagy/tunetrees/issues/338/reactions",
+        "total_count": 0,
+        "+1": 0,
+        "-1": 0,
+        "laugh": 0,
+        "hooray": 0,
+        "confused": 0,
+        "heart": 0,
+        "rocket": 0,
+        "eyes": 0
+      },
+      "timeline_url": "https://api.github.com/repos/sboagy/tunetrees/issues/338/timeline",
+      "performed_via_github_app": null,
+      "state_reason": "completed"
+    }
+  },
+  "public": true,
+  "created_at": "2026-01-01T00:00:01Z"
+}

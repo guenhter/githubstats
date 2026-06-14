@@ -1,0 +1,32 @@
+[package]
+name = "fetch_month"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+reqwest = { version = "0.12", features = [
+    "blocking",
+    "json",
+    "native-tls-vendored",
+] }
+rayon = "1"
+chrono = { version = "0.4", features = ["clock"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive", "env"] }
+flate2 = "1"
+anyhow = "1"
+humanize-duration = "0.0.7"
+rusqlite = { version = "0.32", features = ["bundled"] }
+gcp-bigquery-client = "0.28"
+futures = "0.3"
+async-channel = "2"
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+    "sync",
+    "io-util",
+] }
+# openssl = { version = "0.10", features = ["vendored"] }

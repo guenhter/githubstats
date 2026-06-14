@@ -1,0 +1,46 @@
+{
+  "id": "5562772602",
+  "type": "PullRequestEvent",
+  "actor": {
+    "id": 19188995,
+    "login": "bachmors",
+    "display_login": "bachmors",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/bachmors",
+    "avatar_url": "https://avatars.githubusercontent.com/u/19188995?"
+  },
+  "repo": {
+    "id": 1125938068,
+    "name": "bachmors/systemia",
+    "url": "https://api.github.com/repos/bachmors/systemia"
+  },
+  "payload": {
+    "action": "merged",
+    "number": 3,
+    "pull_request": {
+      "url": "https://api.github.com/repos/bachmors/systemia/pulls/3",
+      "id": 3140091884,
+      "number": 3,
+      "head": {
+        "ref": "claude/integrate-atomic-mode-qWZ09",
+        "sha": "af8dc0dc2d76098aa3eb8fab2a01bcc607a55e26",
+        "repo": {
+          "id": 1125938068,
+          "url": "https://api.github.com/repos/bachmors/systemia",
+          "name": "systemia"
+        }
+      },
+      "base": {
+        "ref": "claude/create-systemia-project-QOLpY",
+        "sha": "0ab46ef7a4a52870a005804aab43348c0aecada0",
+        "repo": {
+          "id": 1125938068,
+          "url": "https://api.github.com/repos/bachmors/systemia",
+          "name": "systemia"
+        }
+      }
+    }
+  },
+  "public": true,
+  "created_at": "2026-01-01T00:00:00Z"
+}
