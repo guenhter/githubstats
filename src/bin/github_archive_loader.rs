@@ -305,7 +305,6 @@ async fn download_events_archive(
                 );
             }
             Ok(Some(data)) => {
-                eprintln!("  [{:>4}/{}] {}", job.idx, job.total, job.url);
                 // If the decompress stage has closed, just move on.
                 let _ = raw_tx
                     .send(RawBytes {
@@ -344,9 +343,6 @@ fn decompress_events_archive(
     raw_rx: async_channel::Receiver<RawBytes>,
     events_tx: mpsc::Sender<RawEvent>,
 ) -> Result<()> {
-    let mut total_sent: u64 = 0;
-    let mut total_filtered: u64 = 0;
-
     while let Ok(raw) = raw_rx.recv_blocking() {
         let decoder = GzDecoder::new(raw.data.as_ref());
         let reader = BufReader::new(decoder);
@@ -384,20 +380,13 @@ fn decompress_events_archive(
             sent += 1;
         }
 
-        total_sent += sent as u64;
-        total_filtered += filtered as u64;
-
         eprintln!(
-            "  [{:>4}/{}] {} — {sent} events ({filtered} filtered in chain)",
+            "  [{:>4}/{}] {} — {sent} events ({filtered} filtered)",
             raw.idx, raw.total, raw.url
         );
     }
 
-    if total_sent + total_filtered > 0 {
-        eprintln!(
-            "  [decompress] worker done — {total_sent} events forwarded, {total_filtered} filtered in chain"
-        );
-    }
+
     // events_tx clone dropped here; last decompress worker drop closes the events channel.
     Ok(())
 }
