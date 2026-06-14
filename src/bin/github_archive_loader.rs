@@ -3,7 +3,9 @@
 //! Downloads GitHub Archive hourly `.json.gz` files for a given month, extracts
 //! events, and writes aggregated counts to a CSV file.
 //!
-//! Pipeline (all stages run concurrently via a [`tokio::task::JoinSet`]):
+//! Pipeline:
+//!
+//!   ── Download chain (concurrent) ──────────────────────────────────────────
 //!
 //!   populate_download_jobs  — pushes one DownloadJob (URL + index) per hour
 //!                             into the job channel, then closes it.
@@ -15,22 +17,24 @@
 //!   decompress  (N blocking) — each worker receives compressed bytes,
 //!                              decompresses with flate2, parses JSON lines,
 //!                              and forwards [`RawEvent`]s.
-//!                              Runs on tokio's blocking thread pool, keeping
-//!                              the async executor free for network I/O.
+//!                              Runs on tokio's blocking thread pool.
 //!
-//!   filter_events           — drops bot actors (login contains "bot") and
-//!                             high-volume actors (> 1 000 events/month);
-//!                             forwards surviving events.
+//!   collect_events          — aggregates all [`RawEvent`]s into a
+//!                             `Vec<EventRecord>` (actor retained for filtering).
 //!
-//!   collect_events          — aggregates surviving events into per-
-//!                             (repo, event_type, action) counts, then sends
-//!                             one [`OutputRow`] per unique key to the writer.
+//!   ── Post-processing (sequential, in main) ────────────────────────────────
 //!
-//!   write_csv               — receives [`OutputRow`]s and writes them as
-//!                             RFC 4180 CSV, flushing on completion.
+//!   filter_actors           — removes bot actors and high-volume actors
+//!                             (> 1 000 events/month) from the collected data.
+//!
+//!   to_output_rows          — aggregates by (repo, event_type, action),
+//!                             attaches language, drops actor — produces
+//!                             `Vec<OutputRow>` ready for writing.
+//!
+//!   write_csv               — writes `Vec<OutputRow>` as RFC 4180 CSV.
 //!
 //! Usage:
-//!   github-archive-loader --month 202601 --parallelism 10 --output events.csv
+//!   github-archive-loader --year 2026 --month 1 --parallelism 10 --output events.csv
 //!
 //! Output format (CSV):
 //!   repo,event_type,action,language,count
@@ -48,7 +52,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
-use tokio::task::{self, JoinSet};
+use tokio::task::JoinSet;
 use tokio::time::sleep;
 
 const USER_AGENT: &str = "githubstats/0.1 (github-archive-loader)";
@@ -69,13 +73,11 @@ const MAX_RETRIES: u32 = 4;
 /// Initial back-off; doubles each attempt: 2 s, 4 s, 8 s, 16 s.
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(2);
 
-/// Channel capacities — bound each stage to limit peak RAM.
+/// Channel capacities — bound the download chain stages to limit peak RAM.
 const JOBS_CAPACITY: usize = 256;
 /// Raw compressed bytes: keep a few in flight to absorb download/decompress jitter.
 const RAW_BYTES_CAPACITY: usize = 16;
 const EVENTS_CAPACITY: usize = 8_192;
-const FILTERED_CAPACITY: usize = 8_192;
-const WRITER_CAPACITY: usize = 4_096;
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -124,10 +126,9 @@ struct RawBytes {
 }
 
 /// Minimal fields extracted from one raw GitHub Archive event line.
+/// Actor is retained so that filtering can happen after collection.
 struct RawEvent {
-    /// Actor login — kept through the filter stage; dropped in output.
     actor: String,
-    /// Full "owner/repo" string.
     repo: String,
     event_type: String,
     /// `payload.action` if present, empty string otherwise.
@@ -136,7 +137,21 @@ struct RawEvent {
     language: String,
 }
 
+/// One event as collected from the download chain.
+/// Aggregated by (actor, repo, event_type, action) — actor is retained so
+/// that [`filter_actors`] can operate on the full dataset before aggregation
+/// into [`OutputRow`]s.
+struct EventRecord {
+    actor: String,
+    repo: String,
+    event_type: String,
+    action: String,
+    language: String,
+    count: u64,
+}
+
 /// One fully aggregated row ready to be written to CSV.
+/// Actor has been dropped; counts are summed across all surviving actors.
 struct OutputRow {
     repo: String,
     event_type: String,
@@ -151,13 +166,11 @@ struct OutputRow {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // ── Channels ─────────────────────────────────────────────────────────────
+    // ── Download chain channels ───────────────────────────────────────────────
     // jobs + raw_bytes: MPMC (async_channel) so N workers can each hold a clone.
     let (jobs_tx, jobs_rx) = async_channel::bounded::<DownloadJob>(JOBS_CAPACITY);
     let (raw_tx, raw_rx) = async_channel::bounded::<RawBytes>(RAW_BYTES_CAPACITY);
     let (events_tx, events_rx) = mpsc::channel::<RawEvent>(EVENTS_CAPACITY);
-    let (filtered_tx, filtered_rx) = mpsc::channel::<RawEvent>(FILTERED_CAPACITY);
-    let (writer_tx, writer_rx) = mpsc::channel::<OutputRow>(WRITER_CAPACITY);
 
     let client = reqwest::Client::builder()
         .user_agent(USER_AGENT)
@@ -169,9 +182,8 @@ async fn main() -> Result<()> {
         .context("failed to build HTTP client")?;
 
     let start = Instant::now();
-    let output = args.output.clone();
 
-    // ── Spawn all pipeline stages ─────────────────────────────────────────────
+    // ── Spawn download chain ──────────────────────────────────────────────────
     let mut set = JoinSet::new();
 
     set.spawn(populate_download_jobs(
@@ -188,21 +200,31 @@ async fn main() -> Result<()> {
     drop(raw_tx); // only the worker clones remain
 
     for _ in 0..args.parallelism {
-        // decompress runs on the blocking thread pool — CPU-bound work.
         let raw_rx = raw_rx.clone();
         let events_tx = events_tx.clone();
         set.spawn_blocking(move || decompress_events_archive(raw_rx, events_tx));
     }
     drop(events_tx); // only the decompress-worker clones remain
 
-    set.spawn(filter_events(events_rx, filtered_tx));
-    set.spawn(collect_events(filtered_rx, writer_tx));
-    set.spawn(write_csv(writer_rx, output));
+    // collect_events has a different return type (Vec<EventRecord>) so it lives
+    // outside the JoinSet and is joined separately after the chain completes.
+    let collect_handle = tokio::spawn(collect_events(events_rx));
 
-    // ── Wait for all stages ───────────────────────────────────────────────────
+    // Wait for populate + download + decompress to finish.
     while let Some(res) = set.join_next().await {
         res.context("pipeline task panicked")??;
     }
+
+    let events = collect_handle
+        .await
+        .context("collect_events task panicked")??;
+
+    eprintln!("Download chain done in {:.1}s", start.elapsed().as_secs_f64());
+
+    // ── Post-processing (sequential) ──────────────────────────────────────────
+    let events = filter_actors(events);
+    let rows = to_output_rows(events);
+    write_csv(rows, &args.output)?;
 
     eprintln!("Done in {:.1}s", start.elapsed().as_secs_f64());
     Ok(())
@@ -283,13 +305,7 @@ async fn download_events_archive(
                 );
             }
             Ok(Some(data)) => {
-                eprintln!(
-                    "  [{:>4}/{}] {} — {} bytes",
-                    job.idx,
-                    job.total,
-                    job.url,
-                    data.len()
-                );
+                eprintln!("  [{:>4}/{}] {}", job.idx, job.total, job.url);
                 // If the decompress stage has closed, just move on.
                 let _ = raw_tx
                     .send(RawBytes {
@@ -308,8 +324,18 @@ async fn download_events_archive(
 
 // ── Stage 3: decompress workers ───────────────────────────────────────────────
 
+/// Returns `true` if an event should be dropped based on per-event criteria
+/// that can be evaluated without seeing the full stream.
+///
+/// Currently drops bot actors (login contains "bot", case-insensitive).
+#[inline]
+fn is_filtered_event(event: &RawEvent) -> bool {
+    event.actor.to_ascii_lowercase().contains("bot")
+}
+
 /// Worker: receives raw compressed [`RawBytes`], decompresses with flate2,
-/// parses every JSON line, and forwards each [`RawEvent`] to `events_tx`.
+/// parses every JSON line, applies per-event filtering via [`is_filtered_event`],
+/// and forwards surviving [`RawEvent`]s to `events_tx`.
 ///
 /// Runs synchronously — intended to be spawned via [`task::spawn_blocking`]
 /// so it executes on tokio's blocking thread pool, leaving the async executor
@@ -318,10 +344,14 @@ fn decompress_events_archive(
     raw_rx: async_channel::Receiver<RawBytes>,
     events_tx: mpsc::Sender<RawEvent>,
 ) -> Result<()> {
+    let mut total_sent: u64 = 0;
+    let mut total_filtered: u64 = 0;
+
     while let Ok(raw) = raw_rx.recv_blocking() {
         let decoder = GzDecoder::new(raw.data.as_ref());
         let reader = BufReader::new(decoder);
         let mut sent = 0usize;
+        let mut filtered = 0usize;
 
         for line in reader.lines() {
             let line = match line {
@@ -344,169 +374,155 @@ fn decompress_events_archive(
             let Some(event) = extract_event(&value) else {
                 continue;
             };
+            if is_filtered_event(&event) {
+                filtered += 1;
+                continue;
+            }
             if events_tx.blocking_send(event).is_err() {
                 break; // downstream closed
             }
             sent += 1;
         }
 
+        total_sent += sent as u64;
+        total_filtered += filtered as u64;
+
         eprintln!(
-            "  [{:>4}/{}] {} — {sent} events",
+            "  [{:>4}/{}] {} — {sent} events ({filtered} filtered in chain)",
             raw.idx, raw.total, raw.url
+        );
+    }
+
+    if total_sent + total_filtered > 0 {
+        eprintln!(
+            "  [decompress] worker done — {total_sent} events forwarded, {total_filtered} filtered in chain"
         );
     }
     // events_tx clone dropped here; last decompress worker drop closes the events channel.
     Ok(())
 }
 
-// ── Stage 4: filter events ────────────────────────────────────────────────────
+// ── Stage 4: collect events ───────────────────────────────────────────────────
 
-/// Reads [`RawEvent`]s, drops bot actors (login contains "bot", case-insensitive)
-/// and high-volume actors (more than 1 000 events in the month), and forwards
-/// survivors to `tx`.
-///
-/// Bot filtering happens here rather than in the downloader so that the
-/// downloader stays focused on I/O; high-volume filtering requires seeing the
-/// full stream anyway.
-async fn filter_events(mut rx: mpsc::Receiver<RawEvent>, tx: mpsc::Sender<RawEvent>) -> Result<()> {
-    let mut actor_totals: HashMap<String, u64> = HashMap::new();
-    let mut total_in: u64 = 0;
-    let mut filtered_bots: u64 = 0;
-    let mut filtered_heavy: u64 = 0;
-
-    while let Some(event) = rx.recv().await {
-        total_in += 1;
-
-        if event.actor.to_ascii_lowercase().contains("bot") {
-            filtered_bots += 1;
-            continue;
-        }
-
-        let count = actor_totals.entry(event.actor.clone()).or_insert(0);
-        *count += 1;
-        if *count > 1_000 {
-            filtered_heavy += 1;
-            continue;
-        }
-
-        if tx.send(event).await.is_err() {
-            break; // downstream closed
-        }
-    }
-
-    eprintln!(
-        "  [filter] {total_in} events in, \
-         {filtered_bots} bot-filtered, \
-         {filtered_heavy} high-volume-filtered"
-    );
-    Ok(())
-}
-
-// ── Stage 5: collect / aggregate events ──────────────────────────────────────
-
-/// Aggregates events into per-(repo, event_type, action) counts, then sends
-/// one [`OutputRow`] per unique key to the writer.
-///
-/// Also tracks the first non-empty language seen per repo, which is attached
-/// to every output row for that repo.
-async fn collect_events(
-    mut rx: mpsc::Receiver<RawEvent>,
-    tx: mpsc::Sender<OutputRow>,
-) -> Result<()> {
-    let mut output_map: HashMap<(String, String, String), u64> = HashMap::new();
-    let mut repo_language: HashMap<String, String> = HashMap::new();
+/// Drains the [`RawEvent`] channel and aggregates into a `Vec<EventRecord>`,
+/// summing counts per `(actor, repo, event_type, action)` key.
+/// Actor is retained for later filtering by [`filter_actors`].
+async fn collect_events(mut rx: mpsc::Receiver<RawEvent>) -> Result<Vec<EventRecord>> {
+    // Key: (actor, repo, event_type, action)  Value: (count, language)
+    let mut map: HashMap<(String, String, String, String), (u64, String)> = HashMap::new();
     let mut total: u64 = 0;
 
     while let Some(event) = rx.recv().await {
         total += 1;
         if total.is_multiple_of(1_000_000) {
-            eprintln!(
-                "  [collect] {total} events aggregated, {} unique keys",
-                output_map.len()
-            );
+            eprintln!("  [collect] {total} events collected");
         }
-
-        if !event.language.is_empty() {
-            repo_language
-                .entry(event.repo.clone())
-                .or_insert(event.language);
-        }
-
-        *output_map
-            .entry((event.repo, event.event_type, event.action))
-            .or_insert(0) += 1;
+        let entry = map
+            .entry((event.actor, event.repo, event.event_type, event.action))
+            .or_insert((0, event.language));
+        entry.0 += 1;
     }
+
+    let records: Vec<EventRecord> = map
+        .into_iter()
+        .map(|((actor, repo, event_type, action), (count, language))| EventRecord {
+            actor,
+            repo,
+            event_type,
+            action,
+            language,
+            count,
+        })
+        .collect();
 
     eprintln!(
-        "  [collect] {total} total events, {} unique (repo, event_type, action) keys",
-        output_map.len()
+        "  [collect] {total} total events, {} unique (actor, repo, event_type, action) keys",
+        records.len()
     );
-
-    // Send one row per unique key to the writer.
-    for ((repo, event_type, action), count) in output_map {
-        let language = repo_language.get(&repo).cloned().unwrap_or_default();
-        if tx
-            .send(OutputRow {
-                repo,
-                event_type,
-                action,
-                language,
-                count,
-            })
-            .await
-            .is_err()
-        {
-            break; // writer closed
-        }
-    }
-    Ok(())
+    Ok(records)
 }
 
-// ── Stage 6: write CSV ────────────────────────────────────────────────────────
+// ── Post-processing ───────────────────────────────────────────────────────────
 
-/// Receives [`OutputRow`]s and writes them as RFC 4180 CSV to `path`.
+/// Removes events from bot actors (login contains "bot", case-insensitive) and
+/// high-volume actors (more than 1 000 events in the dataset).
+fn filter_actors(events: Vec<EventRecord>) -> Vec<EventRecord> {
+    // First pass: sum event counts per actor.
+    let mut actor_counts: HashMap<String, u64> = HashMap::new();
+    for e in &events {
+        *actor_counts.entry(e.actor.clone()).or_insert(0) += e.count;
+    }
+
+    let total_in = events.len();
+    let filtered: Vec<EventRecord> = events
+        .into_iter()
+        .filter(|e| actor_counts[&e.actor] <= 1_000)
+        .collect();
+
+    let removed = total_in - filtered.len();
+    eprintln!(
+        "  [filter] {total_in} events in, {removed} removed (high-volume actors), {} remaining",
+        filtered.len()
+    );
+    filtered
+}
+
+/// Aggregates `Vec<EventRecord>` into `Vec<OutputRow>` by summing counts per
+/// `(repo, event_type, action)` key, attaching the first seen language per
+/// repo, and dropping the actor.
+fn to_output_rows(events: Vec<EventRecord>) -> Vec<OutputRow> {
+    let mut count_map: HashMap<(String, String, String), u64> = HashMap::new();
+    let mut repo_language: HashMap<String, String> = HashMap::new();
+
+    for e in events {
+        if !e.language.is_empty() {
+            repo_language.entry(e.repo.clone()).or_insert(e.language);
+        }
+        *count_map
+            .entry((e.repo, e.event_type, e.action))
+            .or_insert(0) += e.count;
+    }
+
+    let rows: Vec<OutputRow> = count_map
+        .into_iter()
+        .map(|((repo, event_type, action), count)| {
+            let language = repo_language.get(&repo).cloned().unwrap_or_default();
+            OutputRow { repo, event_type, action, language, count }
+        })
+        .collect();
+
+    eprintln!(
+        "  [aggregate] {} unique (repo, event_type, action) keys",
+        rows.len()
+    );
+    rows
+}
+
+/// Writes `Vec<OutputRow>` as RFC 4180 CSV to `path`.
 ///
 /// Format:
 ///   repo,event_type,action,language,count
 ///   owner/name,PullRequestEvent,closed,Rust,42
-async fn write_csv(mut rx: mpsc::Receiver<OutputRow>, path: PathBuf) -> Result<()> {
-    // File I/O on a blocking thread to avoid stalling the async executor.
-    let (file_tx, mut file_rx) = mpsc::channel::<OutputRow>(WRITER_CAPACITY);
+fn write_csv(rows: Vec<OutputRow>, path: &PathBuf) -> Result<()> {
+    let file = File::create(path).with_context(|| format!("create {path:?}"))?;
+    let mut w = BufWriter::new(file);
+    w.write_all(b"repo,event_type,action,language,count\n")
+        .context("write CSV header")?;
 
-    let writer_task = task::spawn_blocking(move || -> Result<()> {
-        let file = File::create(&path).with_context(|| format!("create {path:?}"))?;
-        let mut w = BufWriter::new(file);
-        w.write_all(b"repo,event_type,action,language,count\n")
-            .context("write CSV header")?;
-
-        let mut rows: u64 = 0;
-        while let Some(row) = file_rx.blocking_recv() {
-            let repo = csv_field(&row.repo);
-            let etype = csv_field(&row.event_type);
-            let action = csv_field(&row.action);
-            let language = csv_field(&row.language);
-            writeln!(w, "{repo},{etype},{action},{language},{}", row.count)
-                .context("write CSV row")?;
-            rows += 1;
-            if rows.is_multiple_of(1_000_000) {
-                eprintln!("  [writer] {rows} rows written");
-            }
-        }
-
-        w.flush().context("flush CSV")?;
-        eprintln!("  [writer] {rows} total rows written to {path:?}");
-        Ok(())
-    });
-
-    // Forward rows from the async channel to the blocking writer.
-    while let Some(row) = rx.recv().await {
-        if file_tx.send(row).await.is_err() {
-            break;
-        }
+    let mut count: u64 = 0;
+    for row in rows {
+        let repo = csv_field(&row.repo);
+        let etype = csv_field(&row.event_type);
+        let action = csv_field(&row.action);
+        let language = csv_field(&row.language);
+        writeln!(w, "{repo},{etype},{action},{language},{}", row.count)
+            .context("write CSV row")?;
+        count += 1;
     }
-    drop(file_tx); // signal the blocking writer that no more rows are coming
 
-    writer_task.await.context("writer task panicked")?
+    w.flush().context("flush CSV")?;
+    eprintln!("  [writer] {count} rows written to {path:?}");
+    Ok(())
 }
 
 // ── Fetching ──────────────────────────────────────────────────────────────────
