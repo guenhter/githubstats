@@ -497,19 +497,17 @@ fn write_csv(rows: Vec<OutputRow>, path: &PathBuf) -> Result<()> {
     w.write_all(b"repo,event_type,action,language,count\n")
         .context("write CSV header")?;
 
-    let mut count: u64 = 0;
-    for row in rows {
+    for row in &rows {
         let repo = csv_field(&row.repo);
         let etype = csv_field(&row.event_type);
         let action = csv_field(&row.action);
         let language = csv_field(&row.language);
         writeln!(w, "{repo},{etype},{action},{language},{}", row.count)
             .context("write CSV row")?;
-        count += 1;
     }
 
     w.flush().context("flush CSV")?;
-    eprintln!("  [writer] {count} rows written to {path:?}");
+    eprintln!("  [writer] {} rows written to {path:?}", rows.len());
     Ok(())
 }
 
