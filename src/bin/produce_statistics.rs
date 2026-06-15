@@ -1,35 +1,45 @@
 //! produce-statistics
 //!
 //! Joins an archive CSV file (output of `github_archive_loader` / `filter_csv`)
-//! with a projects-languages JSONL file and computes a weighted language rating.
+//! with a projects-languages JSONL file and produces four language-rating files
+//! in the specified output directory.
 //!
-//! The archive CSV is filtered to `PullRequestEvent` rows; their counts are
-//! summed per repository to obtain a PR-activity score.  That score is then
-//! distributed across languages proportionally to each language's byte share.
+//! Output files (JSONL, sorted descending by rating):
+//!   language-ratings-YYYY-MM-pr-count.jsonl
+//!   language-ratings-YYYY-MM-issue-count.jsonl
+//!   language-ratings-YYYY-MM-push-count.jsonl
+//!   language-ratings-YYYY-MM-developer-activity.jsonl
 //!
-//! Rating formula (per project P with N pull-request events):
-//!   For each language L used by P at percentage pct:
-//!     language_rating[L] += N × (pct / 100)
+//! Rating formula (all four types):
+//!   For each repo, compute the event count (or distinct-actor count for
+//!   developer-activity) and distribute it across all the repo's languages
+//!   proportionally to their byte share.
 //!
-//! Example: a repo with 10 PR events that is 70 % Python contributes 7.0 to Python.
+//!   pr-count:           rating[L] += pr_count            × (size_L / total_size)
+//!   issue-count:        rating[L] += issue_count         × (size_L / total_size)
+//!   push-count:         rating[L] += push_count          × (size_L / total_size)
+//!   developer-activity: rating[L] += distinct_pr_actors  × (size_L / total_size)
+//!
+//! Event types read from the archive CSV:
+//!   PullRequestEvent → pr-count and developer-activity
+//!   IssuesEvent      → issue-count
+//!   PushEvent        → push-count
 //!
 //! Input formats:
 //!   --archive   CSV: actor,repo,event_type,action,language,count
-//!               (output of github_archive_loader / filter_csv)
-//!   --languages JSONL: {"repo":"owner/repo","languages":[{"language":"Rust","percent":92.3},…]}
-//!               (output of github_language_loader)
+//!   --languages JSONL: {"repo":"…","total_size":N,"languages":[{"language":"Rust","size":N},…]}
 //!
-//! Output (stdout) — JSONL sorted by rating descending:
-//!   {"language":"Rust","rating":12345.6}
-//!   {"language":"Python","rating":9876.5}
+//! The YEAR and MONTH for the output filename are inferred from the archive
+//! filename, which must contain the pattern YYYYMM (e.g. archive-202401.csv or
+//! archive-202401-filtered.csv).
 //!
 //! All progress and diagnostic messages go to stderr.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
@@ -39,18 +49,25 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(
     name = "produce-statistics",
-    about = "Compute weighted language ratings from an archive CSV and language breakdowns"
+    about = "Compute weighted language ratings from an archive CSV and language breakdowns.\n\
+             Produces four JSONL files in --output-dir, one per statistic type."
 )]
 struct Args {
-    /// Archive CSV file produced by github_archive_loader
-    /// Format: repo,event_type,action,language,count
+    /// Archive CSV file produced by github_archive_loader / filter_csv.
+    /// Format: actor,repo,event_type,action,language,count
+    /// The filename must contain YYYYMM (e.g. archive-202401-filtered.csv).
     #[arg(long)]
     archive: PathBuf,
 
-    /// JSONL file with per-project language breakdowns
-    /// Format: {"repo":"owner/repo","languages":[{"language":"Rust","percent":92.3},…]}
+    /// JSONL file with per-project language breakdowns.
+    /// Format: {"repo":"owner/repo","total_size":158498874,"languages":[{"language":"Rust","size":143102371},…]}
     #[arg(long)]
     languages: PathBuf,
+
+    /// Directory where the four output JSONL files will be written.
+    /// Files are named: language-ratings-YYYY-MM-<type>.jsonl
+    #[arg(long)]
+    output_dir: PathBuf,
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -58,13 +75,26 @@ struct Args {
 #[derive(Deserialize)]
 struct ProjectLanguages {
     repo: String,
+    total_size: u64,
     languages: Vec<LanguageEntry>,
 }
 
 #[derive(Deserialize)]
 struct LanguageEntry {
     language: String,
-    percent: f64,
+    size: u64,
+}
+
+/// All per-repo activity counts collected from the archive CSV in a single pass.
+struct RepoCounts {
+    /// Total PullRequestEvent count per repo.
+    pr_counts: HashMap<String, u64>,
+    /// Distinct actors that generated a PullRequestEvent, per repo.
+    pr_actors: HashMap<String, usize>,
+    /// Total IssuesEvent count per repo.
+    issue_counts: HashMap<String, u64>,
+    /// Total PushEvent count per repo.
+    push_counts: HashMap<String, u64>,
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -72,39 +102,131 @@ struct LanguageEntry {
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    // Infer YYYY-MM from the archive filename.
+    let year_month = infer_year_month(&args.archive)?;
+    eprintln!("Inferred period: {year_month}");
+
+    // Create output directory if it doesn't exist.
+    std::fs::create_dir_all(&args.output_dir)
+        .with_context(|| format!("cannot create output dir {:?}", args.output_dir))?;
+
     eprintln!("Loading languages from {:?} …", args.languages);
     let lang_map = load_languages(&args.languages)?;
     eprintln!("  {} repos with language data", lang_map.len());
 
-    eprintln!("Computing ratings from {:?} …", args.archive);
-    let ratings = compute_ratings(&args.archive, &lang_map)?;
+    eprintln!("Reading activity from {:?} …", args.archive);
+    let counts = collect_counts(&args.archive)?;
+    eprintln!(
+        "  {} repos with PR activity, {} with issue activity, {} with push activity",
+        counts.pr_counts.len(),
+        counts.issue_counts.len(),
+        counts.push_counts.len(),
+    );
 
-    let mut sorted: Vec<(String, f64)> = ratings.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    let stdout = std::io::stdout();
-    let mut writer = BufWriter::new(stdout.lock());
-    for (language, rating) in &sorted {
-        let rating = (rating * 100.0).round() / 100.0;
-        serde_json::to_writer(
-            &mut writer,
-            &json!({"language": language, "rating": rating}),
-        )
-        .context("serialise")?;
-        writer.write_all(b"\n")?;
+    // ── pr-count ─────────────────────────────────────────────────────────────
+    let out = output_path(&args.output_dir, &year_month, "pr-count");
+    eprintln!("Writing {out:?} …");
+    {
+        let mut w = open_writer(&out)?;
+        let ratings = compute_weighted_ratings(&counts.pr_counts, &lang_map, "PR");
+        write_ratings(&mut w, &ratings)?;
     }
-    writer.flush()?;
 
-    eprintln!("\nDone. {} languages written.", sorted.len());
+    // ── issue-count ──────────────────────────────────────────────────────────
+    let out = output_path(&args.output_dir, &year_month, "issue-count");
+    eprintln!("Writing {out:?} …");
+    {
+        let mut w = open_writer(&out)?;
+        let ratings = compute_weighted_ratings(&counts.issue_counts, &lang_map, "issue");
+        write_ratings(&mut w, &ratings)?;
+    }
+
+    // ── push-count ───────────────────────────────────────────────────────────
+    let out = output_path(&args.output_dir, &year_month, "push-count");
+    eprintln!("Writing {out:?} …");
+    {
+        let mut w = open_writer(&out)?;
+        let ratings = compute_weighted_ratings(&counts.push_counts, &lang_map, "push");
+        write_ratings(&mut w, &ratings)?;
+    }
+
+    // ── developer-activity ───────────────────────────────────────────────────
+    let out = output_path(&args.output_dir, &year_month, "developer-activity");
+    eprintln!("Writing {out:?} …");
+    {
+        let mut w = open_writer(&out)?;
+        // Convert actor counts to u64 map so we can reuse compute_weighted_ratings.
+        let actor_counts: HashMap<String, u64> = counts
+            .pr_actors
+            .iter()
+            .map(|(repo, n)| (repo.clone(), *n as u64))
+            .collect();
+        let ratings = compute_weighted_ratings(&actor_counts, &lang_map, "developer-activity");
+        write_ratings(&mut w, &ratings)?;
+    }
+
+    eprintln!("Done.");
+    Ok(())
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Extract YYYY-MM from an archive filename that contains a YYYYMM digit sequence.
+/// Accepts filenames like archive-202401.csv or archive-202401-filtered.csv.
+fn infer_year_month(path: &PathBuf) -> Result<String> {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .with_context(|| format!("cannot read filename from {:?}", path))?;
+
+    // Find the first run of 6 consecutive ASCII digits.
+    let chars: Vec<char> = name.chars().collect();
+    for i in 0..chars.len().saturating_sub(5) {
+        if chars[i..i + 6].iter().all(|c| c.is_ascii_digit()) {
+            let year: String = chars[i..i + 4].iter().collect();
+            let month: String = chars[i + 4..i + 6].iter().collect();
+            return Ok(format!("{year}-{month}"));
+        }
+    }
+
+    bail!(
+        "cannot infer YYYY-MM from archive filename {:?}; \
+         filename must contain a YYYYMM sequence (e.g. archive-202401-filtered.csv)",
+        name
+    );
+}
+
+/// Build the output file path for a given type.
+fn output_path(dir: &PathBuf, year_month: &str, kind: &str) -> PathBuf {
+    dir.join(format!("language-ratings-{year_month}-{kind}.jsonl"))
+}
+
+/// Open a file for writing, wrapped in a BufWriter.
+fn open_writer(path: &PathBuf) -> Result<BufWriter<File>> {
+    File::create(path)
+        .with_context(|| format!("cannot create {:?}", path))
+        .map(BufWriter::new)
+}
+
+/// Write a sorted-descending list of (language, rating) pairs as JSONL.
+fn write_ratings(w: &mut BufWriter<File>, ratings: &[(String, f64)]) -> Result<()> {
+    for (language, rating) in ratings {
+        let rating = (rating * 100.0).round() / 100.0;
+        serde_json::to_writer(&mut *w, &json!({"language": language, "rating": rating}))
+            .context("serialise")?;
+        w.write_all(b"\n")?;
+    }
     Ok(())
 }
 
 // ── I/O helpers ───────────────────────────────────────────────────────────────
 
 /// Load the languages JSONL into a map keyed by repo slug.
-fn load_languages(path: &PathBuf) -> Result<HashMap<String, Vec<(String, f64)>>> {
+/// Value is (total_size, [(language, size)]) ordered by size descending
+/// (so the first entry is always the primary language).
+fn load_languages(path: &PathBuf) -> Result<HashMap<String, (u64, Vec<(String, u64)>)>> {
     let reader = open(path)?;
-    let mut map: HashMap<String, Vec<(String, f64)>> = HashMap::new();
+    let mut map: HashMap<String, (u64, Vec<(String, u64)>)> = HashMap::new();
     for (i, line) in reader.lines().enumerate() {
         let line = line.context("read error")?;
         let line = line.trim();
@@ -115,10 +237,13 @@ fn load_languages(path: &PathBuf) -> Result<HashMap<String, Vec<(String, f64)>>>
             Ok(pl) => {
                 map.insert(
                     pl.repo,
-                    pl.languages
-                        .into_iter()
-                        .map(|e| (e.language, e.percent))
-                        .collect(),
+                    (
+                        pl.total_size,
+                        pl.languages
+                            .into_iter()
+                            .map(|e| (e.language, e.size))
+                            .collect(),
+                    ),
                 );
             }
             Err(e) => eprintln!("  [skip] languages line {}: {e}", i + 1),
@@ -127,17 +252,18 @@ fn load_languages(path: &PathBuf) -> Result<HashMap<String, Vec<(String, f64)>>>
     Ok(map)
 }
 
-/// Read the archive CSV, sum `count` for `PullRequestEvent` rows per repo,
-/// then accumulate weighted ratings per language.
+/// Read the archive CSV in a single pass and accumulate counts for all
+/// relevant event types.
 ///
 /// CSV format (first row is header):
 ///   actor,repo,event_type,action,language,count
-fn compute_ratings(
-    path: &PathBuf,
-    lang_map: &HashMap<String, Vec<(String, f64)>>,
-) -> Result<HashMap<String, f64>> {
+fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
     let reader = open(path)?;
+
     let mut pr_counts: HashMap<String, u64> = HashMap::new();
+    let mut pr_actor_sets: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut issue_counts: HashMap<String, u64> = HashMap::new();
+    let mut push_counts: HashMap<String, u64> = HashMap::new();
     let mut parse_errors = 0u64;
 
     for (i, line) in reader.lines().enumerate() {
@@ -146,28 +272,25 @@ fn compute_ratings(
         if line.is_empty() {
             continue;
         }
-        // Skip header row
+        // Skip header row.
         if i == 0 && line.starts_with("actor,") {
             continue;
         }
 
-        // CSV format: actor,repo,event_type,action,language,count  (6 fields)
-        // Fields may be quoted (RFC 4180), but the relevant fields never contain
-        // commas or quotes in practice, so a simple split is safe.
         let fields: Vec<&str> = line.splitn(6, ',').collect();
         if fields.len() < 6 {
-            eprintln!("  [skip] CSV line {}: expected 6 fields, got {}", i + 1, fields.len());
+            eprintln!(
+                "  [skip] CSV line {}: expected 6 fields, got {}",
+                i + 1,
+                fields.len()
+            );
             parse_errors += 1;
             continue;
         }
-        let repo = fields[1].trim_matches('"');
+        let actor      = fields[0].trim_matches('"');
+        let repo       = fields[1].trim_matches('"');
         let event_type = fields[2].trim_matches('"');
-        let count_str = fields[5].trim_matches('"');
-
-        // Only count PullRequestEvent rows.
-        if event_type != "PullRequestEvent" {
-            continue;
-        }
+        let count_str  = fields[5].trim_matches('"');
 
         let count: u64 = match count_str.parse() {
             Ok(v) => v,
@@ -178,23 +301,62 @@ fn compute_ratings(
             }
         };
 
-        *pr_counts.entry(repo.to_string()).or_insert(0) += count;
+        match event_type {
+            "PullRequestEvent" => {
+                *pr_counts.entry(repo.to_string()).or_insert(0) += count;
+                pr_actor_sets
+                    .entry(repo.to_string())
+                    .or_default()
+                    .insert(actor.to_string());
+            }
+            "IssuesEvent" => {
+                *issue_counts.entry(repo.to_string()).or_insert(0) += count;
+            }
+            "PushEvent" => {
+                *push_counts.entry(repo.to_string()).or_insert(0) += count;
+            }
+            _ => {}
+        }
     }
 
-    eprintln!(
-        "  {} repos with PullRequestEvent counts ({} parse errors)",
-        pr_counts.len(),
-        parse_errors
-    );
+    if parse_errors > 0 {
+        eprintln!("  ({parse_errors} parse errors)");
+    }
 
+    let pr_actors: HashMap<String, usize> = pr_actor_sets
+        .into_iter()
+        .map(|(repo, actors)| (repo, actors.len()))
+        .collect();
+
+    Ok(RepoCounts {
+        pr_counts,
+        pr_actors,
+        issue_counts,
+        push_counts,
+    })
+}
+
+/// Distribute each repo's event count across all its languages proportionally
+/// to their byte share and return the result sorted descending.
+fn compute_weighted_ratings(
+    event_counts: &HashMap<String, u64>,
+    lang_map: &HashMap<String, (u64, Vec<(String, u64)>)>,
+    label: &str,
+) -> Vec<(String, f64)> {
     let mut ratings: HashMap<String, f64> = HashMap::new();
     let mut matched = 0u64;
     let mut unmatched = 0u64;
 
-    for (repo, count) in &pr_counts {
-        if let Some(langs) = lang_map.get(repo.as_str()) {
-            for (lang, pct) in langs {
-                *ratings.entry(lang.clone()).or_insert(0.0) += *count as f64 * (pct / 100.0);
+    for (repo, count) in event_counts {
+        if let Some((total_size, langs)) = lang_map.get(repo.as_str()) {
+            if *total_size > 0 {
+                for (lang, size) in langs {
+                    let share = *size as f64 / *total_size as f64;
+                    *ratings.entry(lang.clone()).or_insert(0.0) += *count as f64 * share;
+                }
+            } else if let Some((lang, _)) = langs.first() {
+                // total_size is 0 (edge case): attribute everything to primary language.
+                *ratings.entry(lang.clone()).or_insert(0.0) += *count as f64;
             }
             matched += 1;
         } else {
@@ -202,8 +364,13 @@ fn compute_ratings(
         }
     }
 
-    eprintln!("  {matched} repos matched, {unmatched} had no language data");
-    Ok(ratings)
+    eprintln!(
+        "  [{label}] {matched} repos matched, {unmatched} had no language data"
+    );
+
+    let mut sorted: Vec<(String, f64)> = ratings.into_iter().collect();
+    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    sorted
 }
 
 fn open(path: &PathBuf) -> Result<BufReader<File>> {

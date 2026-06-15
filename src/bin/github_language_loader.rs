@@ -62,13 +62,14 @@ struct Args {
 #[derive(Clone, Serialize)]
 struct RepoLanguages {
     repo: String,
+    total_size: u64,
     languages: Vec<LanguageEntry>,
 }
 
 #[derive(Clone, Serialize)]
 struct LanguageEntry {
     language: String,
-    percent: f64,
+    size: u64,
 }
 
 /// The full output of one completed worker batch, broadcast to writer and logger.
@@ -260,6 +261,7 @@ async fn download_one(batch: Vec<String>, config: &WorkerConfig) -> BatchOutcome
                     .iter()
                     .map(|s| RepoLanguages {
                         repo: s.to_string(),
+                        total_size: 0,
                         languages: vec![],
                     })
                     .collect(),
@@ -284,7 +286,7 @@ async fn download_one(batch: Vec<String>, config: &WorkerConfig) -> BatchOutcome
 
     let languages: Vec<RepoLanguages> = extract_languages(&resp, &refs)
         .into_iter()
-        .map(|(repo, languages)| RepoLanguages { repo, languages })
+        .map(|(_, repo_languages)| repo_languages)
         .collect();
 
     BatchOutcome {
@@ -400,7 +402,7 @@ fn extract_rate_limit(resp: &Value) -> Option<(i64, i64)> {
 fn extract_languages(
     resp: &Value,
     repos: &[&str],
-) -> Vec<(String, Vec<LanguageEntry>)> {
+) -> Vec<(String, RepoLanguages)> {
     let data = match resp.get("data").and_then(|d| d.as_object()) {
         Some(d) => d,
         None => return vec![],
@@ -410,22 +412,26 @@ fn extract_languages(
         .enumerate()
         .filter_map(|(i, &repo)| {
             let node = data.get(&format!("r{i}"))?;
-            let entries = if node.is_null() {
-                vec![] // NOT_FOUND — include repo with empty languages
+            let (total_size, entries) = if node.is_null() {
+                (0, vec![]) // NOT_FOUND — include repo with empty languages
             } else {
                 parse_language_entries(Some(node))
             };
-            Some((repo.to_string(), entries))
+            Some((repo.to_string(), RepoLanguages {
+                repo: repo.to_string(),
+                total_size,
+                languages: entries,
+            }))
         })
         .collect()
 }
 
 // ── Language parsing ──────────────────────────────────────────────────────────
 
-fn parse_language_entries(node: Option<&Value>) -> Vec<LanguageEntry> {
+fn parse_language_entries(node: Option<&Value>) -> (u64, Vec<LanguageEntry>) {
     let lang_node = match node.and_then(|v| v.get("languages")) {
         Some(l) => l,
-        None => return vec![],
+        None => return (0, vec![]),
     };
     let total_size = lang_node
         .get("totalSize")
@@ -433,24 +439,16 @@ fn parse_language_entries(node: Option<&Value>) -> Vec<LanguageEntry> {
         .unwrap_or(0);
     let edges = match lang_node.get("edges").and_then(|e| e.as_array()) {
         Some(e) => e,
-        None => return vec![],
+        None => return (total_size, vec![]),
     };
-    edges
-        .iter()
-        .filter_map(|e| edge_to_entry(e, total_size))
-        .collect()
+    let entries = edges.iter().filter_map(edge_to_entry).collect();
+    (total_size, entries)
 }
 
-fn edge_to_entry(edge: &Value, total_size: u64) -> Option<LanguageEntry> {
+fn edge_to_entry(edge: &Value) -> Option<LanguageEntry> {
     let size = edge.get("size")?.as_u64()?;
     let name = edge.get("node")?.get("name")?.as_str()?.to_string();
-    let percent = if total_size > 0 {
-        (size as f64 / total_size as f64) * 100.0
-    } else {
-        0.0
-    };
-    let percent = (percent * 10.0).round() / 10.0;
-    Some(LanguageEntry { language: name, percent })
+    Some(LanguageEntry { language: name, size })
 }
 
 /// Build a batched GraphQL query that aliases each repo as r0…rN.
