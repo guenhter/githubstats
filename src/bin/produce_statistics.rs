@@ -42,7 +42,13 @@ use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+// ── Type aliases ──────────────────────────────────────────────────────────────
+
+/// Per-repo language breakdown: (total_size_bytes, [(language, size_bytes)])
+/// ordered by size descending (first entry = primary language).
+type LangMap = HashMap<String, (u64, Vec<(String, u64)>)>;
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -197,7 +203,7 @@ fn infer_year_month(path: &PathBuf) -> Result<String> {
 }
 
 /// Build the output file path for a given type.
-fn output_path(dir: &PathBuf, year_month: &str, kind: &str) -> PathBuf {
+fn output_path(dir: &Path, year_month: &str, kind: &str) -> PathBuf {
     dir.join(format!("language-ratings-{year_month}-{kind}.jsonl"))
 }
 
@@ -224,7 +230,7 @@ fn write_ratings(w: &mut BufWriter<File>, ratings: &[(String, f64)]) -> Result<(
 /// Load the languages JSONL into a map keyed by repo slug.
 /// Value is (total_size, [(language, size)]) ordered by size descending
 /// (so the first entry is always the primary language).
-fn load_languages(path: &PathBuf) -> Result<HashMap<String, (u64, Vec<(String, u64)>)>> {
+fn load_languages(path: &PathBuf) -> Result<LangMap> {
     let reader = open(path)?;
     let mut map: HashMap<String, (u64, Vec<(String, u64)>)> = HashMap::new();
     for (i, line) in reader.lines().enumerate() {
@@ -340,7 +346,7 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
 /// to their byte share and return the result sorted descending.
 fn compute_weighted_ratings(
     event_counts: &HashMap<String, u64>,
-    lang_map: &HashMap<String, (u64, Vec<(String, u64)>)>,
+    lang_map: &LangMap,
     label: &str,
 ) -> Vec<(String, f64)> {
     let mut ratings: HashMap<String, f64> = HashMap::new();
