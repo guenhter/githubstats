@@ -39,29 +39,9 @@
 //!                               The vast majority are one-off noise with no
 //!                               analytical value.
 //!
-//!   filter_low_actor_repos    — drops rows belonging to repos where fewer than
-//!                               N distinct actors opened a PullRequestEvent.
-//!                               Solo-PR repos (homework, tutorial forks,
-//!                               one-person side-projects) are dominated by
-//!                               JS/TS and massively inflate those languages
-//!                               relative to collaborative ecosystems like
-//!                               Python, Go, and C++.  Default threshold: 3.
-//!
-//!   filter_unstarred_repos    — drops rows belonging to repos that received
-//!                               no WatchEvent (star) in the dataset.
-//!                               A repo with zero stars in a full month of
-//!                               data has essentially no community interest
-//!                               and adds pure noise to language rankings.
-//!
-//! The combination of filter_low_actor_repos and filter_unstarred_repos
-//! approximates the implicit quality gate in the GitHut BigQuery approach,
-//! which only indexes repos present in Google's static corpus (i.e. repos
-//! GitHub has crawled — typically established, publicly-visible projects).
-//!
 //! Usage:
 //!   filter_csv --input archive-202605.csv
 //!   filter_csv --input archive-202605.csv --actor-event-limit 500
-//!   filter_csv --input archive-202605.csv --min-pr-actors 5 --min-stars 10
 //!
 //! Output: same directory as input, filename with `-filtered` inserted before
 //! the extension, e.g. `archive-202605-filtered.csv`.
@@ -85,16 +65,6 @@ struct Args {
     /// Drop actors whose total event count exceeds this threshold
     #[arg(long, default_value_t = 1_000)]
     actor_event_limit: u64,
-
-    /// Drop repos where fewer than this many distinct actors opened a PullRequestEvent.
-    /// Filters out solo homework/tutorial repos that inflate JS/TS counts.
-    #[arg(long, default_value_t = 3)]
-    min_pr_actors: usize,
-
-    /// Drop repos that received fewer than this many WatchEvents (stars) in the dataset.
-    /// Repos with no community interest add noise to language rankings.
-    #[arg(long, default_value_t = 1)]
-    min_stars: u64,
 }
 
 // ── Data model ────────────────────────────────────────────────────────────────
@@ -124,8 +94,6 @@ fn main() -> Result<()> {
     let rows = filter_high_volume_actors(rows, args.actor_event_limit);
     let rows = filter_deleted_repos(rows);
     let rows = filter_fork_only_actors(rows);
-    let rows = filter_low_actor_repos(rows, args.min_pr_actors);
-    let rows = filter_unstarred_repos(rows, args.min_stars);
 
     let surviving = rows.len();
     let removed_pct = if total == 0 { 0.0 } else { 100.0 * (total - surviving) as f64 / total as f64 };
@@ -335,83 +303,6 @@ fn filter_single_event_repos(rows: Vec<Row>) -> Vec<Row> {
         .collect();
 
     log_filter("filter_single_event_repos", before, rows.len(), "");
-    rows
-}
-
-/// Drops rows belonging to repos where the number of distinct actors who
-/// opened a PullRequestEvent is below `min_actors`.
-///
-/// Solo-PR repos — homework assignments, tutorial forks, personal side-projects
-/// where one person opens all their own PRs — are structurally dominated by
-/// JS/TS (web bootcamps, frontend tutorials).  Requiring at least `min_actors`
-/// distinct people to have opened PRs restricts the dataset to collaborative
-/// projects, which distribute across languages much more evenly.
-///
-/// Repos with no PullRequestEvent at all are kept (this filter is neutral
-/// toward non-PR activity like PushEvent-only repos).
-fn filter_low_actor_repos(rows: Vec<Row>, min_actors: usize) -> Vec<Row> {
-    let before = rows.len();
-
-    // Count distinct PR actors per repo.
-    let mut pr_actors: HashMap<String, HashSet<String>> = HashMap::new();
-    for r in &rows {
-        if r.event_type == "PullRequestEvent" {
-            pr_actors
-                .entry(r.repo.clone())
-                .or_default()
-                .insert(r.actor.clone());
-        }
-    }
-
-    let rows: Vec<Row> = rows
-        .into_iter()
-        .filter(|r| {
-            match pr_actors.get(&r.repo) {
-                // Repo has PR activity: apply threshold
-                Some(actors) => actors.len() >= min_actors,
-                // Repo has no PR activity: keep it (not our concern here)
-                None => true,
-            }
-        })
-        .collect();
-
-    log_filter(
-        "filter_low_actor_repos",
-        before,
-        rows.len(),
-        &format!("min_pr_actors={min_actors}"),
-    );
-    rows
-}
-
-/// Drops rows belonging to repos that received fewer than `min_stars`
-/// WatchEvents (stars) in the dataset.
-///
-/// A repo with zero stars over a full month has no demonstrated community
-/// interest.  These are overwhelmingly private-turned-public repos,
-/// abandoned experiments, and auto-generated repositories.  Requiring at
-/// least one star is a minimal but effective signal of public visibility.
-fn filter_unstarred_repos(rows: Vec<Row>, min_stars: u64) -> Vec<Row> {
-    let before = rows.len();
-
-    let mut star_counts: HashMap<String, u64> = HashMap::new();
-    for r in &rows {
-        if r.event_type == "WatchEvent" {
-            *star_counts.entry(r.repo.clone()).or_insert(0) += r.count;
-        }
-    }
-
-    let rows: Vec<Row> = rows
-        .into_iter()
-        .filter(|r| star_counts.get(&r.repo).copied().unwrap_or(0) >= min_stars)
-        .collect();
-
-    log_filter(
-        "filter_unstarred_repos",
-        before,
-        rows.len(),
-        &format!("min_stars={min_stars}"),
-    );
     rows
 }
 

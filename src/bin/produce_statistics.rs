@@ -3,22 +3,15 @@
 //! Joins an archive CSV file (output of `github_archive_loader` / `filter_csv`)
 //! with a projects-languages JSONL file and computes a weighted language rating.
 //!
-//! Two attribution modes (--primary-only flag):
+//! The archive CSV is filtered to `PullRequestEvent` rows; their counts are
+//! summed per repository to obtain a PR-activity score.  That score is then
+//! distributed across languages proportionally to each language's byte share.
 //!
-//!   Weighted (default):
-//!     Each repo's PR count is distributed across all its languages
-//!     proportionally to their byte share.
-//!     Formula: language_rating[L] += N × (pct / 100)
-//!     Example: a repo with 10 PRs that is 70% Python / 30% JS contributes
-//!              7.0 to Python and 3.0 to JS.
+//! Rating formula (per project P with N pull-request events):
+//!   For each language L used by P at percentage pct:
+//!     language_rating[L] += N × (pct / 100)
 //!
-//!   Primary-only (--primary-only):
-//!     Each repo's entire PR count goes to its dominant language only
-//!     (the one with the highest byte share, i.e. first entry in the
-//!     languages list, which is ordered by size descending).
-//!     Formula: language_rating[primary_L] += N
-//!     Example: the same repo contributes 10.0 to Python and 0 to JS.
-//!     This matches the GitHut / BigQuery methodology.
+//! Example: a repo with 10 PR events that is 70 % Python contributes 7.0 to Python.
 //!
 //! Input formats:
 //!   --archive   CSV: actor,repo,event_type,action,language,count
@@ -50,7 +43,7 @@ use std::path::PathBuf;
 )]
 struct Args {
     /// Archive CSV file produced by github_archive_loader
-    /// Format: actor,repo,event_type,action,language,count
+    /// Format: repo,event_type,action,language,count
     #[arg(long)]
     archive: PathBuf,
 
@@ -58,12 +51,6 @@ struct Args {
     /// Format: {"repo":"owner/repo","languages":[{"language":"Rust","percent":92.3},…]}
     #[arg(long)]
     languages: PathBuf,
-
-    /// Attribute each repo's entire PR count to its primary language only
-    /// (the language with the highest byte share), ignoring all others.
-    /// Matches the GitHut / BigQuery methodology.
-    #[arg(long, default_value_t = false)]
-    primary_only: bool,
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -89,9 +76,8 @@ fn main() -> Result<()> {
     let lang_map = load_languages(&args.languages)?;
     eprintln!("  {} repos with language data", lang_map.len());
 
-    let mode = if args.primary_only { "primary-only" } else { "weighted" };
-    eprintln!("Computing ratings from {:?} … (mode: {mode})", args.archive);
-    let ratings = compute_ratings(&args.archive, &lang_map, args.primary_only)?;
+    eprintln!("Computing ratings from {:?} …", args.archive);
+    let ratings = compute_ratings(&args.archive, &lang_map)?;
 
     let mut sorted: Vec<(String, f64)> = ratings.into_iter().collect();
     sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -142,18 +128,13 @@ fn load_languages(path: &PathBuf) -> Result<HashMap<String, Vec<(String, f64)>>>
 }
 
 /// Read the archive CSV, sum `count` for `PullRequestEvent` rows per repo,
-/// then accumulate ratings per language.
+/// then accumulate weighted ratings per language.
 ///
 /// CSV format (first row is header):
 ///   actor,repo,event_type,action,language,count
-///
-/// If `primary_only` is true, each repo's entire PR count is attributed to
-/// its dominant language only (first entry in the languages list).
-/// Otherwise the count is split proportionally across all languages.
 fn compute_ratings(
     path: &PathBuf,
     lang_map: &HashMap<String, Vec<(String, f64)>>,
-    primary_only: bool,
 ) -> Result<HashMap<String, f64>> {
     let reader = open(path)?;
     let mut pr_counts: HashMap<String, u64> = HashMap::new();
@@ -212,16 +193,8 @@ fn compute_ratings(
 
     for (repo, count) in &pr_counts {
         if let Some(langs) = lang_map.get(repo.as_str()) {
-            if primary_only {
-                // Attribute all PRs to the dominant language (highest byte share = first entry).
-                if let Some((lang, _)) = langs.first() {
-                    *ratings.entry(lang.clone()).or_insert(0.0) += *count as f64;
-                }
-            } else {
-                // Distribute PRs proportionally across all languages by byte share.
-                for (lang, pct) in langs {
-                    *ratings.entry(lang.clone()).or_insert(0.0) += *count as f64 * (pct / 100.0);
-                }
+            for (lang, pct) in langs {
+                *ratings.entry(lang.clone()).or_insert(0.0) += *count as f64 * (pct / 100.0);
             }
             matched += 1;
         } else {
