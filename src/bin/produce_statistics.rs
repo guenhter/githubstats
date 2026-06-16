@@ -239,11 +239,21 @@ fn open_writer(path: &PathBuf) -> Result<BufWriter<File>> {
 }
 
 /// Write a sorted-descending list of (language, rating) pairs as JSONL.
+/// Each record includes the rating and its percentage share of the total.
 fn write_ratings(w: &mut BufWriter<File>, ratings: &[(String, f64)]) -> Result<()> {
+    let total: f64 = ratings.iter().map(|(_, r)| r).sum();
     for (language, rating) in ratings {
         let rating = (rating * 100.0).round() / 100.0;
-        serde_json::to_writer(&mut *w, &json!({"language": language, "rating": rating}))
-            .context("serialise")?;
+        let percentage = if total > 0.0 {
+            (rating / total * 10000.0).round() / 100.0
+        } else {
+            0.0
+        };
+        serde_json::to_writer(
+            &mut *w,
+            &json!({"language": language, "rating": rating, "percentage": percentage}),
+        )
+        .context("serialise")?;
         w.write_all(b"\n")?;
     }
     Ok(())
