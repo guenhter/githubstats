@@ -306,7 +306,7 @@ async fn call_graphql(client: &reqwest::Client, query: &str, token: &str) -> Res
             Err(e) if attempts < MAX_RETRIES => {
                 attempts += 1;
                 eprintln!(
-                    "  [retry {attempts}/{MAX_RETRIES}] request error: {e} — retrying in {}s …",
+                    "  [retry {attempts}/{MAX_RETRIES}] request error: {e:#} — retrying in {}s …",
                     RETRY_WAIT.as_secs()
                 );
                 tokio::time::sleep(RETRY_WAIT).await;

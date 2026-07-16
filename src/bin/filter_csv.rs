@@ -32,16 +32,45 @@
 //!
 //!   filter_fork_only_actors   — drops rows belonging to actors whose entire
 //!                               activity in the dataset consists solely of
-//!                               ForkEvents.
+//!                               ForkEvents and/or WatchEvents.  These actors
+//!                               never push, open a PR, or file an issue — they
+//!                               carry no meaningful signal.
 //!
 //!   filter_single_event_repos — drops rows belonging to repos whose total
 //!                               event count across all actors is exactly 1.
 //!                               The vast majority are one-off noise with no
 //!                               analytical value.
 //!
+//!   filter_high_volume_issue_repos
+//!                             — drops IssuesEvent rows belonging to repos whose
+//!                               total IssuesEvent count exceeds a threshold
+//!                               (default: 10 000).  This catches coordinated
+//!                               campaigns where thousands of actors each open a
+//!                               small number of issues against the same repo
+//!                               (e.g. blockchain "inscription" protocols, testnet
+//!                               incentive programs) that individually stay below
+//!                               the per-actor limit but collectively flood a
+//!                               single repo.  Only IssuesEvent rows are removed;
+//!                               push / PR rows for the same repo are kept so the
+//!                               repo still contributes to all other metrics.
+//!
+//!   filter_issue_only_actors  — drops IssuesEvent rows from actors who have no
+//!                               PushEvent or PullRequestEvent anywhere in the
+//!                               dataset.  These actors interact with repos (file
+//!                               bugs, ask questions) but write no code, so they
+//!                               carry no language signal for developer-activity
+//!                               metrics.  In normal months ~23% of IssuesEvents
+//!                               come from such actors; they are disproportionately
+//!                               concentrated in low-push-volume repos and in
+//!                               coordinated campaigns (97% of ghscr/ghscription
+//!                               participants were issue-only actors).
+//!                               Only IssuesEvent rows are removed — all other
+//!                               event types from the same actor are unaffected.
+//!
 //! Usage:
 //!   filter_csv --input archive-202605.csv
 //!   filter_csv --input archive-202605.csv --actor-event-limit 500
+//!   filter_csv --input archive-202605.csv --repo-issue-limit 5000
 //!
 //! Output: same directory as input, filename with `-filtered` inserted before
 //! the extension, e.g. `archive-202605-filtered.csv`.
@@ -65,6 +94,12 @@ struct Args {
     /// Drop actors whose total event count exceeds this threshold
     #[arg(long, default_value_t = 1_000)]
     actor_event_limit: u64,
+
+    /// Drop IssuesEvent rows for repos whose total IssuesEvent count exceeds
+    /// this threshold.  Catches coordinated issue-flooding campaigns where
+    /// many actors each stay below the per-actor limit.
+    #[arg(long, default_value_t = 10_000)]
+    repo_issue_limit: u64,
 }
 
 // ── Data model ────────────────────────────────────────────────────────────────
@@ -94,6 +129,8 @@ fn main() -> Result<()> {
     let rows = filter_high_volume_actors(rows, args.actor_event_limit);
     let rows = filter_deleted_repos(rows);
     let rows = filter_fork_only_actors(rows);
+    let rows = filter_high_volume_issue_repos(rows, args.repo_issue_limit);
+    let rows = filter_issue_only_actors(rows);
 
     let surviving = rows.len();
     let removed_pct = if total == 0 { 0.0 } else { 100.0 * (total - surviving) as f64 / total as f64 };
@@ -260,26 +297,122 @@ fn filter_empty_repos(rows: Vec<Row>) -> Vec<Row> {
 }
 
 /// Drops rows belonging to actors whose entire activity in the dataset is
-/// exclusively ForkEvents — they never pushed, opened a PR, filed an issue,
-/// or did anything else.
+/// exclusively ForkEvents and/or WatchEvents — they never pushed, opened a
+/// PR, filed an issue, or did anything else.
 ///
-/// These are typically users who forked a repo out of curiosity and never
-/// touched it; they add no signal to language or activity analysis.
+/// ForkEvent-only actors are typically users who forked a repo out of
+/// curiosity and never touched it.  WatchEvent-only actors are users who
+/// starred a repo.  Neither carries any language signal.
 fn filter_fork_only_actors(rows: Vec<Row>) -> Vec<Row> {
     let before = rows.len();
 
-    let actors_with_non_fork: HashSet<String> = rows
+    let actors_with_meaningful_activity: HashSet<String> = rows
         .iter()
-        .filter(|r| r.event_type != "ForkEvent")
+        .filter(|r| r.event_type != "ForkEvent" && r.event_type != "WatchEvent")
         .map(|r| r.actor.clone())
         .collect();
 
     let rows: Vec<Row> = rows
         .into_iter()
-        .filter(|r| actors_with_non_fork.contains(&r.actor))
+        .filter(|r| actors_with_meaningful_activity.contains(&r.actor))
         .collect();
 
     log_filter("filter_fork_only_actors", before, rows.len(), "");
+    rows
+}
+
+/// Drops IssuesEvent rows belonging to repos whose total IssuesEvent count
+/// exceeds `limit`.
+///
+/// This targets coordinated issue-flooding campaigns where a large number of
+/// actors each open a small number of issues against the same repo, keeping
+/// every individual actor below the per-actor event limit while collectively
+/// generating an extreme volume.  A real-world example from December 2023:
+/// the ghscr/ghscription blockchain "inscription" protocol attracted 17 478
+/// users who each opened ~22 issues in a single day (386 k IssuesEvents
+/// total), causing an ~22× spike in Python's issue-count share for that month.
+///
+/// Only IssuesEvent rows are removed — push and PR rows for the affected repo
+/// are left intact so the repo continues to contribute to push-count, pr-count,
+/// and developer-activity ratings.
+///
+/// At the default limit of 10 000, no repos are removed in typical months
+/// (the busiest legitimate issue tracker, AleoHQ/leo, peaks at ~8 200/month).
+/// The limit can be tuned downward (e.g. 5 000) to also catch smaller
+/// incentivised-issue campaigns at the cost of excluding that repo's issues.
+fn filter_high_volume_issue_repos(rows: Vec<Row>, limit: u64) -> Vec<Row> {
+    let before = rows.len();
+
+    // Sum IssuesEvent counts per repo.
+    let mut repo_issue_totals: HashMap<String, u64> = HashMap::new();
+    for r in &rows {
+        if r.event_type == "IssuesEvent" {
+            *repo_issue_totals.entry(r.repo.clone()).or_insert(0) += r.count;
+        }
+    }
+
+    let rows: Vec<Row> = rows
+        .into_iter()
+        .filter(|r| {
+            // Only apply the cap to IssuesEvent rows; leave all other event
+            // types from the same repo untouched.
+            if r.event_type != "IssuesEvent" {
+                return true;
+            }
+            repo_issue_totals.get(&r.repo).copied().unwrap_or(0) <= limit
+        })
+        .collect();
+
+    log_filter(
+        "filter_high_volume_issue_repos",
+        before,
+        rows.len(),
+        &format!("limit={limit}"),
+    );
+    rows
+}
+
+/// Drops IssuesEvent rows from actors who have no PushEvent or PullRequestEvent
+/// anywhere in the dataset.
+///
+/// These actors interact with repositories (filing bug reports, asking questions)
+/// but never contribute code during the measured period.  They add noise to
+/// issue-count ratings without reflecting developer activity.
+///
+/// Data from November 2023 (a normal month):
+///   - ~23% of all IssuesEvents come from issue-only actors
+///   - Their share is highest (58%) in repos with zero push activity and drops
+///     to ~15% in actively developed repos — indicating they concentrate in
+///     lower-signal, non-development contexts
+///   - 97% of participants in the ghscr/ghscription inscription campaign had
+///     no code activity in the same month, making this a complementary defence
+///     to filter_high_volume_issue_repos
+///
+/// Only IssuesEvent rows are removed.  If an actor also has PushEvent or
+/// PullRequestEvent rows, all their rows (including IssuesEvents) are kept.
+fn filter_issue_only_actors(rows: Vec<Row>) -> Vec<Row> {
+    let before = rows.len();
+
+    // Collect actors that have at least one code event (push or PR).
+    let code_actors: HashSet<String> = rows
+        .iter()
+        .filter(|r| r.event_type == "PushEvent" || r.event_type == "PullRequestEvent")
+        .map(|r| r.actor.clone())
+        .collect();
+
+    let rows: Vec<Row> = rows
+        .into_iter()
+        .filter(|r| {
+            // Non-issue rows are always kept regardless of actor type.
+            if r.event_type != "IssuesEvent" {
+                return true;
+            }
+            // Keep IssuesEvent rows only for actors who also write code.
+            code_actors.contains(&r.actor)
+        })
+        .collect();
+
+    log_filter("filter_issue_only_actors", before, rows.len(), "");
     rows
 }
 
