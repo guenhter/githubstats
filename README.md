@@ -53,6 +53,23 @@ cargo run --release --bin filter_csv -- \
 # produces: data/archive-${YEAR}${MONTH}-filtered.csv
 
 # Step 3 — resolve language breakdown for repos with PR activity
+#
+# For archives up to and including September 2025 the GH Archive CSV already
+# contains a language column (field 5).  Extract it directly with awk — no
+# GitHub API calls required:
+#
+#   awk -F',' 'NR==1{next} $5==""{next} seen[$2]++{next} \
+#     {printf "{\"repo\":\"%s\",\"total_size\":1,\"languages\":[{\"language\":\"%s\",\"size\":1}]}\n", $2, $5}' \
+#     "data/archive-${YEAR}${MONTH}.csv" > "data/languages-${MONTH_DASHED}.jsonl"
+#
+# Note: use the unfiltered archive here so no repos are missed; the language
+# column reflects the first event seen for each repo in the raw archive.
+# total_size and size are set to 1 (byte counts are not in the archive).
+#
+# From October 2025 onwards GitHub stripped language from event payloads, so
+# the GraphQL fallback below is required for those months.
+#   See: https://github.blog/changelog/2025-08-08-upcoming-changes-to-github-events-api-payloads/
+#
 #   (extract unique repo slugs that had PullRequestEvents, skip the header)
 export GITHUB_TOKEN=ghp_…
 awk -F',' 'NR>1 && $3=="PullRequestEvent" {print $2}' \
@@ -94,8 +111,8 @@ For each repository with language breakdown `{L: size_L}` and total codebase siz
 rating[L] += event_count × (size_L / total_size)
 ```
 
-Example: a repo with 10 PRs that is 70% TypeScript / 30% Python contributes
-**7.0** to TypeScript and **3.0** to Python.
+Example: a repo with 2 PRs that is 70% TypeScript / 30% Python contributes
+**1.4** to TypeScript and **0.6** to Python.
 
 The `developer-activity` variant uses **distinct PR contributors** instead of
 raw PR count, making it neutral to per-developer commit-frequency habits.

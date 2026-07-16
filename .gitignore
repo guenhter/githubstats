@@ -1,6 +1,7 @@
 # Downloaded GH Archive files (large, transient)
 *.json.gz
-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9]*.json
+archive*.csv
+languages-*.jsonl
 
 # Checkpoints
 checkpoint_*.pkl
@@ -10,4 +11,3 @@ checkpoint_*.pkl
 
 # Rust build output
 target/
-data/
