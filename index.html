@@ -243,8 +243,8 @@
 <div class="controls">
   <label for="metric">Metric</label>
   <select id="metric">
+    <option value="developer-activity" selected>Developer activity</option>
     <option value="pr-count">Pull-request count</option>
-    <option value="developer-activity">Developer activity</option>
     <option value="push-count">Push count</option>
     <option value="issue-count">Issue count</option>
   </select>
@@ -254,8 +254,8 @@
   <label for="topN">Top languages</label>
   <select id="topN">
     <option value="10">10</option>
-    <option value="20">20</option>
-    <option value="50" selected>50</option>
+    <option value="20" selected>20</option>
+    <option value="50">50</option>
   </select>
 
   <label for="asOf">As of</label>
@@ -270,7 +270,7 @@
     <option value="10">10 years ago</option>
   </select>
 
-  <span class="status" id="status"></span>
+
 </div>
 
 <div id="chart"></div>
@@ -400,7 +400,6 @@ document.getElementById('compareYears').addEventListener('change', () => {
 // ── Data loading ──────────────────────────────────────────────────────────────
 
 async function loadAndRender(type) {
-  setStatus('Loading…');
   showOverlay(true);
   try {
     const url = `${DATA_BASE}${type}.jsonl`;
@@ -411,9 +410,7 @@ async function loadAndRender(type) {
     window._parsedData = records;
     populateMonthPicker(records);
     renderAll(records);
-    setStatus(`${records.length.toLocaleString()} records`);
   } catch (err) {
-    setStatus(`Error: ${err.message}`);
     console.error(err);
   } finally {
     showOverlay(false);
@@ -697,9 +694,6 @@ function escHtml(s) {
 }
 function escAttr(s) {
   return s.replace(/"/g,'&quot;');
-}
-function setStatus(msg) {
-  document.getElementById('status').textContent = msg;
 }
 function showOverlay(on) {
   document.getElementById('overlay').classList.toggle('hidden', !on);
