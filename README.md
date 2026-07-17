@@ -7,24 +7,28 @@ and the GitHub GraphQL API, producing per-language weighted activity ratings for
 
 ## Pipeline overview
 
-Four tools run in sequence to produce language-rating files for a month:
+Five tools run in sequence to produce language-rating files for a month:
 
 ```
 github_archive_loader  →  archive-YYYYMM.csv
         ↓
-filter_csv             →  archive-YYYYMM-filtered.csv
-        ↓  (extract repo slugs)
+filter_archive         →  archive-YYYYMM-filtered.csv
+        ↓
 github_language_loader →  languages-YYYY-MM.jsonl
         ↓
-produce_statistics     →  language-ratings-YYYY-MM-<type>.jsonl  (four files)
+produce_statistics     →  language-ratings-YYYY-MM-<type>.jsonl  (one per statistic type)
+
+        ↓
+pack_statistics        →  language-ratings-all-<type>.jsonl  (one per statistic type)
 ```
 
 | Tool | Input | Output |
 |---|---|---|
-| `github_archive_loader` | GH Archive hourly `.json.gz` files (downloaded automatically) | CSV — `actor,repo,event_type,action,language,count` |
-| `filter_csv` | archive CSV | filtered CSV — bots, CI actors, single-event repos and deleted repos removed |
-| `github_language_loader` | stdin — one `owner/repo` slug per line | stdout JSONL — `{"repo":"…","total_size":N,"languages":[…]}` |
-| `produce_statistics` | archive CSV + languages JSONL | four JSONL files in `--output-dir`, one per statistic type |
+| `github_archive_loader` | GH Archive hourly `.json.gz` files (downloaded automatically) | **`archive-YYYYMM.csv`** (CSV)<br>Sample:<br>`actor,repo,event_type,action,language,count`<br>`torvalds,torvalds/linux,PushEvent,,,42`<br>`octocat,octocat/Hello-World,PullRequestEvent,opened,,3` |
+| `filter_archive` | archive CSV | **`archive-YYYYMM-filtered.csv`** (CSV)<br>same format as above, with bots, CI actors, single-event repos, etc. removed |
+| `github_language_loader` | stdin — one `owner/repo` slug per line | **`languages-YYYY-MM.jsonl`** (JSONL)<br>Sample:<br>`{"repo":"torvalds/linux","total_size":1247804,"languages":[{"language":"C","size":1100000},{"language":"Shell","size":80000}]}`<br>`{"repo":"octocat/Hello-World","total_size":1024,"languages":[{"language":"Ruby","size":1024}]}` |
+| `produce_statistics` | filtered archive CSV + languages JSONL | **`language-ratings-YYYY-MM-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"language":"JavaScript","percentage":11.12,"rating":288414.50}` |
+| `pack_statistics` | per-month `language-ratings-YYYY-MM-<type>.jsonl` files | **`language-ratings-all-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"month":"2026-01","language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"month":"2026-01","language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"month":"2026-02","language":"TypeScript","percentage":21.87,"rating":568204.13}` |
 
 > **Required environment variable for `github_language_loader`:**
 > ```bash
@@ -38,19 +42,18 @@ produce_statistics     →  language-ratings-YYYY-MM-<type>.jsonl  (four files)
 ```bash
 YEAR=2026
 MONTH=01          # zero-padded for file names
-MONTH_DASHED=2026-01
 
 # Step 1 — download & aggregate GH Archive events for the month
 cargo run --release --bin github_archive_loader -- \
   --year "$YEAR" \
-  --month "$((10#$MONTH))" \
+  --month "$MONTH" \
   --parallelism 10 \
   --output "data/archive-${YEAR}${MONTH}.csv"
 
 # Step 2 — filter out bots, CI actors, noise repos
-cargo run --release --bin filter_csv -- \
-  --input "data/archive-${YEAR}${MONTH}.csv"
-# produces: data/archive-${YEAR}${MONTH}-filtered.csv
+cargo run --release --bin filter_archive -- \
+  --input "data/archive-${YEAR}${MONTH}.csv" \
+  --output "data/archive-${YEAR}${MONTH}-filtered.csv"
 
 # Step 3 — resolve language breakdown for repos with PR activity
 #
@@ -60,7 +63,7 @@ cargo run --release --bin filter_csv -- \
 #
 #   awk -F',' 'NR==1{next} $5==""{next} seen[$2]++{next} \
 #     {printf "{\"repo\":\"%s\",\"total_size\":1,\"languages\":[{\"language\":\"%s\",\"size\":1}]}\n", $2, $5}' \
-#     "data/archive-${YEAR}${MONTH}.csv" > "data/languages-${MONTH_DASHED}.jsonl"
+#     "data/archive-${YEAR}${MONTH}.csv" > "data/languages-${YEAR}-${MONTH}.jsonl"
 #
 # Note: use the unfiltered archive here so no repos are missed; the language
 # column reflects the first event seen for each repo in the raw archive.
@@ -70,22 +73,30 @@ cargo run --release --bin filter_csv -- \
 # the GraphQL fallback below is required for those months.
 #   See: https://github.blog/changelog/2025-08-08-upcoming-changes-to-github-events-api-payloads/
 #
-#   (extract unique repo slugs that had PullRequestEvents, skip the header)
+#   (extract unique repo slugs that had PushEvents, skip the header)
 export GITHUB_TOKEN=ghp_…
-awk -F',' 'NR>1 && $3=="PullRequestEvent" {print $2}' \
+awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' \
     "data/archive-${YEAR}${MONTH}-filtered.csv" | sort -u \
   | cargo run --release --bin github_language_loader -- \
       --workers 10 \
-  > "data/languages-${MONTH_DASHED}.jsonl"
+  > "data/languages-${YEAR}-${MONTH}.jsonl"
 
 # Step 4 — compute weighted per-language ratings (four output files)
 cargo run --release --bin produce_statistics -- \
   --archive "data/archive-${YEAR}${MONTH}-filtered.csv" \
-  --languages "data/languages-${MONTH_DASHED}.jsonl" \
+  --languages "data/languages-${YEAR}-${MONTH}.jsonl" \
   --output-dir data/
+
+# Step 5 — pack all monthly ratings into combined files (run once after all months are produced)
+for TYPE in pr-count issue-count push-count developer-activity; do
+  cargo run --release --bin pack_statistics -- \
+    --type "$TYPE" \
+    --input-dir data/ \
+    --output-dir www/
+done
 ```
 
-### Output files
+### Rating files
 
 `produce_statistics` writes four JSONL files, all sorted descending by rating:
 
@@ -99,6 +110,20 @@ cargo run --release --bin produce_statistics -- \
 Each record:
 ```json
 {"language":"TypeScript","rating":322361.9}
+```
+
+`pack_statistics` merges all monthly files for a given type into one combined file:
+
+| File | Contents |
+|---|---|
+| `language-ratings-all-pr-count.jsonl` | All months, pr-count, sorted chronologically |
+| `language-ratings-all-issue-count.jsonl` | All months, issue-count, sorted chronologically |
+| `language-ratings-all-push-count.jsonl` | All months, push-count, sorted chronologically |
+| `language-ratings-all-developer-activity.jsonl` | All months, developer-activity, sorted chronologically |
+
+Each record has a `month` field prepended:
+```json
+{"month":"2026-01","language":"TypeScript","rating":322361.9}
 ```
 
 ---
@@ -116,42 +141,6 @@ Example: a repo with 2 PRs that is 70% TypeScript / 30% Python contributes
 
 The `developer-activity` variant uses **distinct PR contributors** instead of
 raw PR count, making it neutral to per-developer commit-frequency habits.
-
----
-
-## Event types
-
-The archive CSV contains one row per unique `(actor, repo, event_type, action)` tuple per month.
-`produce_statistics` uses three event types:
-
-| Event type | Used for |
-|---|---|
-| `PullRequestEvent` | `pr-count`, `developer-activity` |
-| `IssuesEvent` | `issue-count` |
-| `PushEvent` | `push-count` |
-
-Full list of event types that appear in GH Archive data:
-
-| Event type | Actions | Description |
-|---|---|---|
-| `CommitCommentEvent` | `created` | A comment was posted on a commit. |
-| `CreateEvent` | *(none)* | A branch, tag, or repository was created. |
-| `DeleteEvent` | *(none)* | A branch or tag was deleted. |
-| `DiscussionEvent` | `created` | A discussion was created in a repository. |
-| `ForkEvent` | `forked` | A user forked a repository. |
-| `GollumEvent` | *(none)* | A wiki page was created or updated. |
-| `IssueCommentEvent` | `created` | A comment was posted on an issue or pull request. |
-| `IssuesEvent` | `opened`, `closed`, `reopened`, `assigned`, `unassigned`, `labeled`, `unlabeled` | Activity on an issue. |
-| `MemberEvent` | `added` | A collaborator was added to a repository. |
-| `PublicEvent` | *(none)* | A private repository was made public. |
-| `PullRequestEvent` | `opened`, `closed`, `reopened`, `assigned`, `unassigned`, `labeled`, `unlabeled` | Activity on a pull request. |
-| `PullRequestReviewEvent` | `created`, `updated`, `dismissed` | A pull request review was submitted, updated, or dismissed. |
-| `PullRequestReviewCommentEvent` | `created` | A comment was posted on a pull request diff. |
-| `PushEvent` | *(none)* | One or more commits were pushed to a branch or tag. |
-| `ReleaseEvent` | `published` | A release was published. |
-| `WatchEvent` | `started` | A user starred a repository (the API calls this "watching"). |
-
-> **Note:** Events with no action have an empty `action` column in the CSV.
 
 ---
 
@@ -177,6 +166,23 @@ language-lookup step.
 
 Community impact documented in:
 [Data size / number of events have dropped 100x since 2025-10-09](https://github.com/igrigorik/gharchive.org/issues/312)
+
+---
+
+## Why not just use Google BigQuery for archive data?
+
+The GH Archive data is also available via Google BigQuery (`githubarchive` public dataset),
+which allows SQL queries over the full event history without downloading any files.
+There are two reasons this project downloads the raw `.json.gz` files directly instead:
+
+- **Cost.** BigQuery charges per byte scanned. A single month of GH Archive data is
+  several hundred gigabytes; querying it repeatedly across many months adds up quickly.
+  Downloading the hourly files is free.
+
+- **Payload stripping.** BigQuery mirrors whatever GH Archive publishes. From October 2025
+  onwards the payloads are already stripped (no language field) before they reach BigQuery,
+  so the same GraphQL language-lookup step would still be required. BigQuery offers no
+  advantage for post-2025 data.
 
 ---
 

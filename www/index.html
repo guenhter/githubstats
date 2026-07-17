@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GitHub Language Trends</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    @media (max-width: 599px) {
+      body { padding: 12px; }
+    }
+
+    /* ── Page wrapper ── */
+    .page-wrap {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #f0f6fc;
+    }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    label {
+      font-size: 0.875rem;
+      color: #8b949e;
+    }
+
+    select {
+      background: #161b22;
+      color: #e6edf3;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 0.875rem;
+      cursor: pointer;
+      outline: none;
+    }
+
+    select:focus { border-color: #58a6ff; }
+
+    .status {
+      font-size: 0.8rem;
+      color: #8b949e;
+      margin-left: auto;
+    }
+
+    /* ── Chart ── */
+    #chart {
+      width: 100%;
+      height: 520px;
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      margin-bottom: 32px;
+    }
+
+    @media (max-width: 599px) {
+      #chart { height: 640px; }
+    }
+
+    /* ── Table ── */
+    .table-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .table-header h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+
+    .table-header span {
+      font-size: 0.8rem;
+      color: #8b949e;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    thead th {
+      background: #161b22;
+      color: #8b949e;
+      font-weight: 500;
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid #21262d;
+      white-space: nowrap;
+    }
+
+    thead th.num { text-align: right; }
+
+    tbody tr:nth-child(even) { background: #0d1117; }
+    tbody tr:nth-child(odd)  { background: #161b22; }
+    tbody tr:hover           { background: #1c2128; }
+
+    tbody td {
+      padding: 8px 14px;
+      border-bottom: 1px solid #21262d;
+      white-space: nowrap;
+    }
+
+    tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .rank       { color: #8b949e; width: 36px; padding-left: 8px; padding-right: 8px; }
+    .col-rank-ago { width: 44px; padding-left: 8px; padding-right: 8px; }
+    .col-change { width: 60px; padding-left: 4px; padding-right: 4px; text-align: left; }
+    .col-trend  { width: 120px; padding-left: 8px; padding-right: 8px; }
+    .lang       { font-weight: 500; color: #f0f6fc; }
+
+    .delta-pos { color: #3fb950; }
+    .delta-neg { color: #f85149; }
+    .delta-neu { color: #8b949e; }
+
+    .spark {
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 48px;
+      padding-top: 32px;
+      border-top: 1px solid #21262d;
+      color: #8b949e;
+      font-size: 0.85rem;
+      line-height: 1.7;
+    }
+
+    footer h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #f0f6fc;
+      margin-bottom: 20px;
+    }
+
+    footer h3 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #e6edf3;
+      margin: 20px 0 6px;
+    }
+
+    footer p { margin-bottom: 8px; }
+
+    footer a {
+      color: #58a6ff;
+      text-decoration: none;
+    }
+    footer a:hover { text-decoration: underline; }
+
+    footer pre {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 0.8rem;
+      color: #e6edf3;
+      margin: 8px 0;
+      overflow-x: auto;
+    }
+
+    footer code {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-size: 0.8rem;
+      color: #e6edf3;
+    }
+
+    footer dl { margin: 8px 0; }
+    footer dt {
+      font-weight: 600;
+      color: #e6edf3;
+      margin-top: 10px;
+    }
+    footer dd { margin-left: 16px; }
+
+    .metric-desc {
+      font-size: 0.8rem;
+      color: #8b949e;
+      font-style: italic;
+    }
+
+    /* Loading overlay */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(13,17,23,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      color: #8b949e;
+      z-index: 100;
+      transition: opacity 0.2s;
+    }
+    #overlay.hidden { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+
+<div id="overlay">Loading…</div>
+
+<div class="page-wrap">
+
+<h1>GitHub Language Trends</h1>
+
+<div class="controls">
+  <label for="metric">Metric</label>
+  <select id="metric">
+    <option value="pr-count">Pull-request count</option>
+    <option value="developer-activity">Developer activity</option>
+    <option value="push-count">Push count</option>
+    <option value="issue-count">Issue count</option>
+  </select>
+
+  <span id="metricDesc" class="metric-desc"></span>
+
+  <label for="topN">Top languages</label>
+  <select id="topN">
+    <option value="10">10</option>
+    <option value="20">20</option>
+    <option value="50" selected>50</option>
+  </select>
+
+  <label for="asOf">As of</label>
+  <select id="asOf"></select>
+
+  <label for="compareYears">Compare vs</label>
+  <select id="compareYears">
+    <option value="1" selected>1 year ago</option>
+    <option value="2">2 years ago</option>
+    <option value="3">3 years ago</option>
+    <option value="5">5 years ago</option>
+    <option value="10">10 years ago</option>
+  </select>
+
+  <span class="status" id="status"></span>
+</div>
+
+<div id="chart"></div>
+
+<div class="table-header">
+  <h2 id="tableTitle">Top 100 languages</h2>
+  <span id="tableCaption"></span>
+</div>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="rank num">Rank</th>
+        <th class="num col-rank-ago" id="thRankYearAgo">Rank 1 year ago</th>
+        <th class="num col-change" style="text-align:left">Change</th>
+        <th class="num col-trend" id="thTrend">Trend</th>
+        <th>Language</th>
+        <th class="num" id="thLatest">—</th>
+        <th class="num" id="thYearAgo">—</th>
+        <th class="num" id="thDelta">Δ pp</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<footer>
+  <h2>About this data</h2>
+
+  <h3>Source</h3>
+  <p>
+    Activity data is sourced from <a href="https://www.gharchive.org/" target="_blank" rel="noopener">GH Archive</a>,
+    which records every public GitHub event. Events are aggregated monthly and filtered to remove
+    bots, CI actors, single-event repositories, and deleted repositories.
+  </p>
+
+  <h3>Language attribution</h3>
+  <p>
+    <strong>Up to and including 2025-09</strong>, GitHub's event payloads contained a
+    <code>language</code> field identifying the repository's <em>primary</em> language.
+    Statistics for these months are therefore based on a single language per repository.
+  </p>
+  <p>
+    <strong>From 2025-10 onwards</strong>, GitHub
+    <a href="https://github.blog/changelog/2025-08-08-upcoming-changes-to-github-events-api-payloads/"
+       target="_blank" rel="noopener">stripped language data from event payloads</a>.
+    Language breakdowns are now resolved via the GitHub GraphQL API, which returns the full
+    byte-size breakdown of every language in a repository. Each repository's activity score
+    is then distributed proportionally across all its languages by byte share.
+  </p>
+  <p>
+    This means the two eras are not perfectly comparable: secondary languages (CSS, HTML, Shell, …)
+    appear more prominently from 2025-10 onwards because they were previously invisible inside
+    mixed-language repositories.
+  </p>
+
+  <h3>Rating formula</h3>
+  <p>For each repository, the chosen event count is distributed across its languages:</p>
+  <pre>rating[L] += event_count × (size_L / total_size)</pre>
+  <p>
+    The <em>developer-activity</em> metric uses distinct pull-request contributors instead of
+    raw event count, making it neutral to per-developer commit-frequency habits.
+  </p>
+
+  <h3>Metrics</h3>
+  <dl>
+    <dt>Pull-request count</dt>
+    <dd>Total <code>PullRequestEvent</code> actions per repository per month.</dd>
+    <dt>Developer activity</dt>
+    <dd>Number of distinct actors that opened or acted on a pull request per repository per month.</dd>
+    <dt>Push count</dt>
+    <dd>Total <code>PushEvent</code> actions per repository per month.</dd>
+    <dt>Issue count</dt>
+    <dd>Total <code>IssuesEvent</code> actions per repository per month.</dd>
+  </dl>
+</footer>
+
+</div><!-- /.page-wrap -->
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const DATA_BASE = '/language-ratings-all-';
+const CHART_LANGUAGES = 50;
+const TABLE_LANGUAGES = 100;
+
+const METRIC_DESC = {
+  'pr-count':           'How many pull-request actions each language attracted — a direct signal of active collaborative development.',
+  'developer-activity': 'How many distinct developers opened or acted on a pull request — filters out high-frequency individual committers.',
+  'push-count':         'How many push events each language received — reflects raw commit volume including solo and automated work.',
+  'issue-count':        'How many issue actions each language attracted — a proxy for community engagement and bug-tracking activity.',
+};
+
+// ── ECharts init ─────────────────────────────────────────────────────────────
+
+const chartDom = document.getElementById('chart');
+const chart = echarts.init(chartDom, 'dark');
+window.addEventListener('resize', () => {
+  chart.resize();
+  if (window._parsedData) renderAll(window._parsedData);
+});
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let currentType = 'pr-count';
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+
+document.getElementById('metric').addEventListener('change', e => {
+  currentType = e.target.value;
+  document.getElementById('metricDesc').textContent = METRIC_DESC[currentType] ?? '';
+  loadAndRender(currentType);
+});
+
+document.getElementById('topN').addEventListener('change', () => {
+  if (window._parsedData) renderAll(window._parsedData);
+});
+
+document.getElementById('asOf').addEventListener('change', () => {
+  if (window._parsedData) renderAll(window._parsedData);
+});
+
+document.getElementById('compareYears').addEventListener('change', () => {
+  if (window._parsedData) renderAll(window._parsedData);
+});
+
+// ── Data loading ──────────────────────────────────────────────────────────────
+
+async function loadAndRender(type) {
+  setStatus('Loading…');
+  showOverlay(true);
+  try {
+    const url = `${DATA_BASE}${type}.jsonl`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+    const text = await response.text();
+    const records = parseJsonl(text);
+    window._parsedData = records;
+    populateMonthPicker(records);
+    renderAll(records);
+    setStatus(`${records.length.toLocaleString()} records`);
+  } catch (err) {
+    setStatus(`Error: ${err.message}`);
+    console.error(err);
+  } finally {
+    showOverlay(false);
+  }
+}
+
+function populateMonthPicker(records) {
+  const months = [...new Set(records.map(r => r.month))].sort();
+  const sel = document.getElementById('asOf');
+  const prev = sel.value;
+  sel.innerHTML = '';
+  for (let i = months.length - 1; i >= 0; i--) {
+    const opt = document.createElement('option');
+    opt.value = months[i];
+    opt.textContent = months[i];
+    sel.appendChild(opt);
+  }
+  // Restore previous selection if still valid, otherwise default to latest
+  sel.value = months.includes(prev) ? prev : months[months.length - 1];
+}
+
+function parseJsonl(text) {
+  const records = [];
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    try { records.push(JSON.parse(t)); } catch { /* skip bad lines */ }
+  }
+  return records;
+}
+
+// ── Data processing ───────────────────────────────────────────────────────────
+
+function processData(records, selectedMonth) {
+  // Group by month → { language → percentage }
+  const byMonth = new Map();
+  for (const r of records) {
+    if (r.month > selectedMonth) continue;   // ignore months after the cutoff
+    if (!byMonth.has(r.month)) byMonth.set(r.month, new Map());
+    byMonth.get(r.month).set(r.language, r.percentage);
+  }
+
+  // Sorted months (chronological), all ≤ selectedMonth
+  const months = [...byMonth.keys()].sort();
+
+  // Top languages ranked by the selected (latest visible) month
+  const latestData = byMonth.get(selectedMonth) ?? new Map();
+  const allLanguages = [...latestData.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([lang]) => lang);
+
+  return { months, byMonth, allLanguages, latestMonth: selectedMonth };
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+function renderAll(records) {
+  const topN = parseInt(document.getElementById('topN').value, 10);
+  const selectedMonth = document.getElementById('asOf').value;
+  const { months, byMonth, allLanguages, latestMonth } = processData(records, selectedMonth);
+
+  renderChart(months, byMonth, allLanguages.slice(0, topN));
+  renderTable(months, byMonth, allLanguages.slice(0, TABLE_LANGUAGES), latestMonth);
+}
+
+// ── Chart ─────────────────────────────────────────────────────────────────────
+
+function renderChart(months, byMonth, languages) {
+  const mobile = window.innerWidth < 600;
+
+  const series = languages.map(lang => ({
+    name: lang,
+    type: 'line',
+    smooth: true,
+    symbol: 'none',
+    lineStyle: { width: 1.5 },
+    emphasis: { lineStyle: { width: 3 } },
+    data: months.map(m => {
+      const v = byMonth.get(m)?.get(lang);
+      return v != null ? +v.toFixed(2) : null;
+    }),
+    connectNulls: true,
+  }));
+
+  const legend = mobile
+    ? {
+        type: 'scroll',
+        orient: 'horizontal',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        textStyle: { color: '#8b949e', fontSize: 10 },
+        pageTextStyle: { color: '#8b949e' },
+        pageIconColor: '#58a6ff',
+        pageIconInactiveColor: '#30363d',
+        itemWidth: 12,
+        itemHeight: 8,
+      }
+    : {
+        type: 'scroll',
+        orient: 'vertical',
+        right: 0,
+        top: 0,
+        bottom: 0,
+        textStyle: { color: '#8b949e', fontSize: 11 },
+        pageTextStyle: { color: '#8b949e' },
+        pageIconColor: '#58a6ff',
+        pageIconInactiveColor: '#30363d',
+      };
+
+  const grid = mobile
+    ? { left: 48, right: 8, top: 12, bottom: 80 }
+    : { left: 56, right: 160, top: 16, bottom: 56 };
+
+  const option = {
+    backgroundColor: '#161b22',
+    animation: false,
+    grid,
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: '#1c2128',
+      borderColor: '#30363d',
+      textStyle: { color: '#e6edf3', fontSize: 12 },
+      formatter(params) {
+        const month = params[0].axisValue;
+        const rows = params
+          .filter(p => p.value != null)
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10)
+          .map(p => `<span style="color:${p.color}">●</span> ${p.seriesName}: <b>${p.value}%</b>`)
+          .join('<br>');
+        return `<b>${month}</b><br>${rows}`;
+      },
+    },
+    legend,
+    xAxis: {
+      type: 'category',
+      data: months,
+      axisLine: { lineStyle: { color: '#30363d' } },
+      axisLabel: {
+        color: '#8b949e',
+        fontSize: 11,
+        rotate: 30,
+        formatter(v) {
+          return v.endsWith('-01') ? v.slice(0, 4) : '';
+        },
+      },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      name: '%',
+      nameTextStyle: { color: '#8b949e', fontSize: 11 },
+      axisLine: { show: false },
+      axisLabel: { color: '#8b949e', fontSize: 11, formatter: v => v + '%' },
+      splitLine: { lineStyle: { color: '#21262d' } },
+    },
+    series,
+  };
+
+  chart.setOption(option, true);
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+
+function renderTable(months, byMonth, languages, latestMonth) {
+  const compareYears = parseInt(document.getElementById('compareYears').value, 10);
+  const compareMonths = compareYears * 12;
+
+  const latestIdx = months.indexOf(latestMonth);
+  const compareIdx = Math.max(0, latestIdx - compareMonths);
+  const compareMonth = months[compareIdx];
+
+  const yearsLabel = compareYears === 1 ? '1 year ago' : `${compareYears} years ago`;
+
+  const metricLabel = document.getElementById('metric').options[document.getElementById('metric').selectedIndex].text;
+  document.getElementById('tableTitle').textContent = `Top 100 languages · ${metricLabel}`;
+  document.getElementById('tableCaption').textContent =
+    `Latest: ${latestMonth} · vs ${compareMonth}`;
+
+  document.getElementById('thLatest').textContent      = `Current (${latestMonth}) %`;
+  document.getElementById('thYearAgo').textContent     = `${yearsLabel} (${compareMonth}) %`;
+  document.getElementById('thRankYearAgo').textContent = `Rank (${compareMonth})`;
+  document.getElementById('thTrend').textContent       = `Trend (${compareYears * 12} mo)`;
+
+  const latestData  = byMonth.get(latestMonth);
+  const compareData = byMonth.get(compareMonth);
+
+  // Build compare-period rank lookup
+  const compareRank = new Map();
+  if (compareData) {
+    [...compareData.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([lang], idx) => compareRank.set(lang, idx + 1));
+  }
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+
+  languages.forEach((lang, i) => {
+    const currentRank = i + 1;
+    const latest  = latestData.get(lang)   ?? 0;
+    const compare = compareData?.get(lang) ?? 0;
+    const delta   = latest - compare;
+
+    // Rank change: positive = moved up (lower rank number), negative = moved down
+    const prevRank   = compareRank.get(lang);
+    const rankChange = prevRank != null ? prevRank - currentRank : null;
+
+    // Sparkline: covers the comparison window
+    const spark = months
+      .slice(Math.max(0, latestIdx - compareMonths), latestIdx + 1)
+      .map(m => byMonth.get(m)?.get(lang) ?? 0);
+
+    const deltaClass = delta > 0.05 ? 'delta-pos' : delta < -0.05 ? 'delta-neg' : 'delta-neu';
+    const deltaStr   = (delta >= 0 ? '+' : '') + delta.toFixed(2) + ' pp';
+
+    // Rank arrows: one arrow per position, capped at 10 to avoid huge strings
+    let rankHtml = '';
+    if (rankChange === null) {
+      rankHtml = '<span class="delta-neu">new</span>';
+    } else if (rankChange === 0) {
+      rankHtml = '<span class="delta-neu">―</span>';
+    } else {
+      const arrow    = rankChange > 0 ? '▲' : '▼';
+      const cls      = rankChange > 0 ? 'delta-pos' : 'delta-neg';
+      const absSteps = Math.abs(rankChange);
+      const arrows   = arrow.repeat(Math.min(absSteps, 5));
+      const extra    = absSteps > 5 ? `<span class="delta-neu" style="font-size:0.75em">${rankChange > 0 ? '+' : '-'}${absSteps}</span>` : '';
+      rankHtml = `<span class="${cls}">${arrows}</span>${extra}`;
+    }
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="num rank">${currentRank}</td>
+      <td class="num col-rank-ago">${prevRank != null ? prevRank : '<span class="delta-neu">—</span>'}</td>
+      <td class="col-change" style="letter-spacing:-1px">${rankHtml}</td>
+      <td class="num col-trend"><canvas class="spark" width="120" height="24"
+            data-spark="${escAttr(JSON.stringify(spark))}"></canvas></td>
+      <td class="lang">${escHtml(lang)}</td>
+      <td class="num">${latest.toFixed(2)}%</td>
+      <td class="num">${compare > 0 ? compare.toFixed(2) + '%' : '—'}</td>
+      <td class="num ${deltaClass}">${deltaStr}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Draw sparklines
+  for (const canvas of tbody.querySelectorAll('canvas.spark')) {
+    drawSparkline(canvas, JSON.parse(canvas.dataset.spark));
+  }
+}
+
+// ── Sparkline ─────────────────────────────────────────────────────────────────
+
+function drawSparkline(canvas, values) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = '#58a6ff';
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * w;
+    const y = h - ((v - min) / range) * (h - 4) - 2;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s) {
+  return s.replace(/"/g,'&quot;');
+}
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+function showOverlay(on) {
+  document.getElementById('overlay').classList.toggle('hidden', !on);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+document.getElementById('metricDesc').textContent = METRIC_DESC[currentType] ?? '';
+loadAndRender(currentType);
+</script>
+</body>
+</html>

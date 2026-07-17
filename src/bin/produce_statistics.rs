@@ -1,6 +1,6 @@
 //! produce-statistics
 //!
-//! Joins an archive CSV file (output of `github_archive_loader` / `filter_csv`)
+//! Joins an archive CSV file (output of `github_archive_loader` / `filter_archive`)
 //! with a projects-languages JSONL file and produces four language-rating files
 //! in the specified output directory.
 //!
@@ -71,7 +71,7 @@ type LangMap = HashMap<String, (u64, Vec<(String, u64)>)>;
              Produces four JSONL files in --output-dir, one per statistic type."
 )]
 struct Args {
-    /// Archive CSV file produced by github_archive_loader / filter_csv.
+    /// Archive CSV file produced by github_archive_loader / filter_archive.
     /// Format: actor,repo,event_type,action,language,count
     /// The filename must contain YYYYMM (e.g. archive-202401-filtered.csv).
     #[arg(long)]
