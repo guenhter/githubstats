@@ -92,7 +92,7 @@ for TYPE in pr-count issue-count push-count developer-activity; do
   cargo run --release --bin pack_statistics -- \
     --type "$TYPE" \
     --input-dir data/ \
-    --output-dir www/
+    --output-dir data/
 done
 ```
 
