@@ -14,6 +14,7 @@
       color: #e6edf3;
       min-height: 100vh;
       padding: 24px;
+      overflow-x: hidden;
     }
 
     @media (max-width: 599px) {
@@ -94,15 +95,39 @@
       border-radius: 0 0 8px 8px;
       padding: 8px 14px;
       margin-bottom: 32px;
+    }
+
+    #legend-items {
       display: flex;
       flex-wrap: wrap;
       gap: 2px 8px;
+      overflow: hidden;
     }
+    #legend-items.collapsed {
+      max-height: 46px;
+    }
+
+    #legend-toggle {
+      display: block;
+      margin-top: 4px;
+      background: none;
+      border: none;
+      color: #58a6ff;
+      font-size: 0.78rem;
+      cursor: pointer;
+      padding: 2px 0;
+    }
+    #legend-toggle:hover { text-decoration: underline; }
 
     @media (max-width: 599px) {
       #chart-legend {
         padding: 6px 10px;
+      }
+      #legend-items {
         gap: 1px 4px;
+      }
+      #legend-items.collapsed {
+        max-height: 39px;
       }
     }
 
@@ -206,10 +231,11 @@
 
     tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
-    .rank       { color: #8b949e; width: 36px; padding-left: 8px; padding-right: 8px; }
-    .col-rank-ago { width: 44px; padding-left: 8px; padding-right: 8px; }
+    tbody td.rank { color: #e6edf3; width: 36px; padding-left: 8px; padding-right: 8px; }
+    .rank         {                 width: 36px; padding-left: 8px; padding-right: 8px; }
+    .col-rank-ago { width: 44px; padding-left: 8px; padding-right: 8px; color: #8b949e; }
     .col-change { width: 60px; padding-left: 4px; padding-right: 4px; text-align: left; }
-    .col-trend  { width: 120px; padding-left: 8px; padding-right: 8px; }
+    .col-trend  { width: 100px; padding-left: 8px; padding-right: 8px; }
     .lang       { font-weight: 500; color: #f0f6fc; }
 
     .delta-pos { color: #3fb950; }
@@ -223,6 +249,8 @@
 
     /* rank-change arrows duplicated inside lang cell — hide on desktop */
     .td-rank-change { display: none; }
+    /* rank-ago span inside rank cell — hide on desktop */
+    td.td-rank .rank-ago { display: none; }
 
     /* ── Table (mobile card layout) ── */
     @media (max-width: 599px) {
@@ -240,14 +268,14 @@
       /* each row becomes a card */
       tbody tr {
         display: grid;
-        grid-template-columns: 36px 1fr auto;
+        grid-template-columns: max-content 1fr auto;
         grid-template-rows: auto auto;
         column-gap: 8px;
         row-gap: 4px;
         background: #161b22 !important;
         border: 1px solid #21262d;
         border-radius: 8px;
-        padding: 10px 12px;
+        padding: 10px 12px 10px 8px;
       }
       tbody tr:hover { background: #1c2128 !important; }
 
@@ -264,11 +292,26 @@
       td.td-rank {
         grid-column: 1;
         grid-row: 1 / 3;
-        color: #8b949e;
-        font-size: 0.75rem;
+        width: auto !important;
         font-variant-numeric: tabular-nums;
         align-self: center;
         text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+      }
+      td.td-rank .rank-current {
+        color: #e6edf3;
+        font-size: 0.85rem;
+        font-weight: 600;
+        line-height: 1;
+      }
+      td.td-rank .rank-ago {
+        display: block;
+        color: #8b949e;
+        font-size: 0.7rem;
+        line-height: 1;
       }
 
       /* col 2, row 1: language name + rank-change arrows */
@@ -299,9 +342,8 @@
         white-space: nowrap;
       }
 
-      /* col 1, row 2: empty spacer so sparkline aligns with lang text */
+      td.td-change { display: none; }
       td.td-rank-ago { display: none; }
-      td.td-change   { display: none; }
 
       /* col 2–3, row 2: sparkline + delta */
       td.td-trend {
@@ -310,6 +352,12 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        min-width: 0;
+      }
+
+      td.td-trend canvas {
+        max-width: 100%;
+        height: auto;
       }
 
       td.td-delta {
@@ -321,9 +369,6 @@
         align-self: center;
         white-space: nowrap;
       }
-
-      /* compare % hidden on mobile (redundant with delta) */
-      td.td-compare { display: none; }
 
       .spark-mobile {
         display: inline-block;
@@ -414,7 +459,7 @@
 
     /* ── Fork me on GitHub ribbon ── */
     .github-corner svg {
-      position: fixed;
+      position: absolute;
       top: 0;
       right: 0;
       z-index: 9999;
@@ -471,7 +516,10 @@
 </div>
 
 <div id="chart"></div>
-<div id="chart-legend"></div>
+<div id="chart-legend">
+  <div id="legend-items" class="collapsed"></div>
+  <button id="legend-toggle">Show all</button>
+</div>
 
 <div class="table-header">
   <h2 id="tableTitle">Top 100 languages</h2>
@@ -490,12 +538,11 @@
     <thead>
       <tr>
         <th class="rank num">Rank</th>
-        <th class="num col-rank-ago" id="thRankYearAgo">Rank 1 year ago</th>
+        <th class="num col-rank-ago" id="thRankYearAgo">Rank 1y ago</th>
         <th class="num col-change" style="text-align:left">Change</th>
         <th class="num col-trend" id="thTrend">Trend</th>
         <th>Language</th>
         <th class="num" id="thLatest">—</th>
-        <th class="num" id="thYearAgo">—</th>
         <th class="num" id="thDelta">Δ pp</th>
       </tr>
     </thead>
@@ -783,9 +830,19 @@ function renderChart(months, byMonth, languages) {
 
 // ── Chart legend ──────────────────────────────────────────────────────────────
 
+let legendExpanded = false;
+
+document.getElementById('legend-toggle').addEventListener('click', () => {
+  legendExpanded = !legendExpanded;
+  const items = document.getElementById('legend-items');
+  const btn   = document.getElementById('legend-toggle');
+  items.classList.toggle('collapsed', !legendExpanded);
+  btn.textContent = legendExpanded ? 'Show less' : 'Show all';
+});
+
 function renderLegend(languages, selected) {
-  const container = document.getElementById('chart-legend');
-  container.innerHTML = '';
+  const items = document.getElementById('legend-items');
+  items.innerHTML = '';
 
   // Get actual colors from ECharts so they always match the chart lines
   const chartOption = chart.getOption();
@@ -818,8 +875,12 @@ function renderLegend(languages, selected) {
       chart.dispatchAction({ type: active ? 'legendSelect' : 'legendUnSelect', name: lang });
     });
 
-    container.appendChild(item);
+    items.appendChild(item);
   });
+
+  // Keep collapsed state in sync
+  items.classList.toggle('collapsed', !legendExpanded);
+  document.getElementById('legend-toggle').textContent = legendExpanded ? 'Show less' : 'Show all';
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
@@ -839,10 +900,9 @@ function renderTable(months, byMonth, languages, latestMonth) {
   document.getElementById('tableCaption').textContent =
     `Latest: ${latestMonth} · vs ${compareMonth}`;
 
-  document.getElementById('thLatest').textContent      = `Current (${latestMonth}) %`;
-  document.getElementById('thYearAgo').textContent     = `${yearsLabel} (${compareMonth}) %`;
+  document.getElementById('thLatest').textContent = `${latestMonth}`;
   document.getElementById('thRankYearAgo').textContent = `Rank (${compareMonth})`;
-  document.getElementById('thTrend').textContent       = `Trend (${compareYears} y)`;
+  document.getElementById('thTrend').textContent  = `Trend (${compareYears}y)`;
 
   const latestData  = byMonth.get(latestMonth);
   const compareData = byMonth.get(compareMonth);
@@ -891,16 +951,19 @@ function renderTable(months, byMonth, languages, latestMonth) {
       rankHtml = `<span class="${cls}">${arrows}</span>${extra}`;
     }
 
+    const rankAgoHtml = prevRank != null
+      ? `<span class="rank-ago">${prevRank}</span>`
+      : `<span class="rank-ago delta-neu">—</span>`;
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td class="num rank td-rank">${currentRank}</td>
+      <td class="num rank td-rank"><span class="rank-current">${currentRank}</span>${rankAgoHtml}</td>
       <td class="num col-rank-ago td-rank-ago">${prevRank != null ? prevRank : '<span class="delta-neu">—</span>'}</td>
       <td class="col-change td-change" style="letter-spacing:-1px">${rankHtml}</td>
-      <td class="num col-trend td-trend"><canvas class="spark" width="120" height="24"
+      <td class="num col-trend td-trend"><canvas class="spark" width="100" height="24"
             data-spark="${escAttr(JSON.stringify(spark))}"></canvas></td>
       <td class="lang td-lang">${escHtml(lang)}<span class="td-rank-change" style="letter-spacing:-1px">${rankHtml}</span></td>
       <td class="num td-current">${latest.toFixed(2)}%</td>
-      <td class="num td-compare">${compare > 0 ? compare.toFixed(2) + '%' : '—'}</td>
       <td class="num ${deltaClass} td-delta">${deltaStr}</td>
     `;
     tbody.appendChild(tr);
