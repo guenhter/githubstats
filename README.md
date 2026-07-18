@@ -81,14 +81,14 @@ awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' \
       --workers 10 \
   > "data/languages-${YEAR}-${MONTH}.jsonl"
 
-# Step 4 — compute weighted per-language ratings (four output files)
+# Step 4 — compute weighted per-language ratings (five output files)
 cargo run --release --bin produce_statistics -- \
   --archive "data/archive-${YEAR}${MONTH}-filtered.csv" \
   --languages "data/languages-${YEAR}-${MONTH}.jsonl" \
   --output-dir data/
 
 # Step 5 — pack all monthly ratings into combined files (run once after all months are produced)
-for TYPE in pr-count issue-count push-count developer-activity; do
+for TYPE in pr-count issue-count push-count developer-activity active-repos; do
   cargo run --release --bin pack_statistics -- \
     --type "$TYPE" \
     --input-dir data/ \
@@ -98,14 +98,15 @@ done
 
 ### Rating files
 
-`produce_statistics` writes four JSONL files, all sorted descending by rating:
+`produce_statistics` writes five JSONL files, all sorted descending by rating:
 
 | File | Signal | Formula |
 |---|---|---|
 | `language-ratings-YYYY-MM-pr-count.jsonl` | Pull-request volume | `rating[L] += pr_count × (size_L / total_size)` |
 | `language-ratings-YYYY-MM-issue-count.jsonl` | Issue volume | `rating[L] += issue_count × (size_L / total_size)` |
 | `language-ratings-YYYY-MM-push-count.jsonl` | Push volume | `rating[L] += push_count × (size_L / total_size)` |
-| `language-ratings-YYYY-MM-developer-activity.jsonl` | Distinct PR contributors | `rating[L] += distinct_pr_actors × (size_L / total_size)` |
+| `language-ratings-YYYY-MM-developer-activity.jsonl` | Distinct contributors (PR + push) | `rating[L] += distinct_contributors × (size_L / total_size)` |
+| `language-ratings-YYYY-MM-active-repos.jsonl` | Active repository breadth | `rating[L] += 1 × (size_L / total_size)` per active repo |
 
 Each record:
 ```json
@@ -120,6 +121,7 @@ Each record:
 | `language-ratings-all-issue-count.jsonl` | All months, issue-count, sorted chronologically |
 | `language-ratings-all-push-count.jsonl` | All months, push-count, sorted chronologically |
 | `language-ratings-all-developer-activity.jsonl` | All months, developer-activity, sorted chronologically |
+| `language-ratings-all-active-repos.jsonl` | All months, active-repos, sorted chronologically |
 
 Each record has a `month` field prepended:
 ```json
@@ -139,8 +141,16 @@ rating[L] += event_count × (size_L / total_size)
 Example: a repo with 2 PRs that is 70% TypeScript / 30% Python contributes
 **1.4** to TypeScript and **0.6** to Python.
 
-The `developer-activity` variant uses **distinct PR contributors** instead of
-raw PR count, making it neutral to per-developer commit-frequency habits.
+The `developer-activity` variant uses **distinct contributors** — the union of
+unique actors from `PullRequestEvent` and `PushEvent` — instead of raw event
+counts. This counts each person who actively committed to or reviewed a
+repository once, regardless of how often they pushed or opened PRs, making the
+metric neutral to per-developer commit-frequency habits.
+
+The `active-repos` variant contributes exactly **1 per repository** (regardless
+of event volume) to each of that repository's languages by byte share. This
+measures breadth of language adoption — how many distinct active codebases use
+each language — rather than the volume of activity those codebases generate.
 
 ---
 

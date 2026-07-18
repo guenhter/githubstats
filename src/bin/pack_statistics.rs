@@ -19,11 +19,11 @@
 //! Records are written in chronological order (sorted by month), preserving the
 //! within-month ordering (descending by rating) from the source files.
 //!
-//! Statistic types: pr-count | issue-count | push-count | developer-activity
+//! Statistic types: pr-count | issue-count | push-count | developer-activity | active-repos
 //!
 //! Usage:
 //!   pack_statistics --type pr-count
-//!   pack_statistics --type push-count --input-dir data/ --output-dir data/
+//!   pack_statistics --type active-repos --input-dir data/ --output-dir data/
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
@@ -41,7 +41,7 @@ use std::path::PathBuf;
 )]
 struct Args {
     /// Statistic type to pack.
-    /// One of: pr-count, issue-count, push-count, developer-activity
+    /// One of: pr-count, issue-count, push-count, developer-activity, active-repos
     #[arg(long, value_name = "TYPE")]
     r#type: String,
 
@@ -104,7 +104,7 @@ fn main() -> Result<()> {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn validate_type(t: &str) -> Result<()> {
-    const VALID: &[&str] = &["pr-count", "issue-count", "push-count", "developer-activity"];
+    const VALID: &[&str] = &["pr-count", "issue-count", "push-count", "developer-activity", "active-repos"];
     if VALID.contains(&t) {
         Ok(())
     } else {

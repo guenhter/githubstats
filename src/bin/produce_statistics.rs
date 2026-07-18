@@ -1,7 +1,7 @@
 //! produce-statistics
 //!
 //! Joins an archive CSV file (output of `github_archive_loader` / `filter_archive`)
-//! with a projects-languages JSONL file and produces four language-rating files
+//! with a projects-languages JSONL file and produces five language-rating files
 //! in the specified output directory.
 //!
 //! Output files (JSONL, sorted descending by rating):
@@ -9,11 +9,12 @@
 //!   language-ratings-YYYY-MM-issue-count.jsonl
 //!   language-ratings-YYYY-MM-push-count.jsonl
 //!   language-ratings-YYYY-MM-developer-activity.jsonl
+//!   language-ratings-YYYY-MM-active-repos.jsonl
 //!
 //! With --primary-only the filenames gain a "-primary" suffix:
 //!   language-ratings-YYYY-MM-pr-count-primary.jsonl  (etc.)
 //!
-//! Rating formula (all four types):
+//! Rating formula (all five types):
 //!
 //!   Default (proportional):
 //!     For each repo, distribute the event count across all its languages
@@ -21,7 +22,10 @@
 //!     pr-count:           rating[L] += pr_count            × (size_L / total_size)
 //!     issue-count:        rating[L] += issue_count         × (size_L / total_size)
 //!     push-count:         rating[L] += push_count          × (size_L / total_size)
-//!     developer-activity: rating[L] += distinct_pr_actors  × (size_L / total_size)
+//!     developer-activity: rating[L] += distinct_contributors × (size_L / total_size)
+//!                         (distinct actors across PullRequestEvent + PushEvent)
+//!     active-repos:       rating[L] += 1                   × (size_L / total_size)
+//!                         (once per repo that had any PushEvent or PullRequestEvent)
 //!
 //!   --primary-only (experimental):
 //!     All credit goes to the single dominant (largest-by-bytes) language;
@@ -30,12 +34,14 @@
 //!     pr-count:           rating[primary] += pr_count
 //!     issue-count:        rating[primary] += issue_count
 //!     push-count:         rating[primary] += push_count
-//!     developer-activity: rating[primary] += distinct_pr_actors
+//!     developer-activity: rating[primary] += distinct_contributors
+//!                         (distinct actors across PullRequestEvent + PushEvent)
+//!     active-repos:       rating[primary] += 1
 //!
 //! Event types read from the archive CSV:
-//!   PullRequestEvent → pr-count and developer-activity
+//!   PullRequestEvent → pr-count, developer-activity, and active-repos
 //!   IssuesEvent      → issue-count
-//!   PushEvent        → push-count
+//!   PushEvent        → push-count, developer-activity, and active-repos
 //!
 //! Input formats:
 //!   --archive   CSV: actor,repo,event_type,action,language,count
@@ -114,12 +120,14 @@ struct LanguageEntry {
 struct RepoCounts {
     /// Total PullRequestEvent count per repo.
     pr_counts: HashMap<String, u64>,
-    /// Distinct actors that generated a PullRequestEvent, per repo.
-    pr_actors: HashMap<String, usize>,
+    /// Distinct actors that generated a PullRequestEvent or PushEvent, per repo.
+    dev_actors: HashMap<String, usize>,
     /// Total IssuesEvent count per repo.
     issue_counts: HashMap<String, u64>,
     /// Total PushEvent count per repo.
     push_counts: HashMap<String, u64>,
+    /// Repos that had at least one PushEvent or PullRequestEvent (value is always 1).
+    active_repos: HashMap<String, u64>,
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -142,10 +150,11 @@ fn main() -> Result<()> {
     eprintln!("Reading activity from {:?} …", args.archive);
     let counts = collect_counts(&args.archive)?;
     eprintln!(
-        "  {} repos with PR activity, {} with issue activity, {} with push activity",
+        "  {} repos with PR activity, {} with issue activity, {} with push activity, {} active repos",
         counts.pr_counts.len(),
         counts.issue_counts.len(),
         counts.push_counts.len(),
+        counts.active_repos.len(),
     );
 
     // ── pr-count ─────────────────────────────────────────────────────────────
@@ -180,13 +189,22 @@ fn main() -> Result<()> {
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
-        // Convert actor counts to u64 map so we can reuse compute_ratings.
-        let actor_counts: HashMap<String, u64> = counts
-            .pr_actors
+        // Convert contributor counts to u64 map so we can reuse compute_ratings.
+        let dev_counts: HashMap<String, u64> = counts
+            .dev_actors
             .iter()
             .map(|(repo, n)| (repo.clone(), *n as u64))
             .collect();
-        let ratings = compute_ratings(&actor_counts, &lang_map, "developer-activity", args.primary_only);
+        let ratings = compute_ratings(&dev_counts, &lang_map, "developer-activity", args.primary_only);
+        write_ratings(&mut w, &ratings)?;
+    }
+
+    // ── active-repos ─────────────────────────────────────────────────────────
+    let out = output_path(&args.output_dir, &year_month, "active-repos", args.primary_only);
+    eprintln!("Writing {out:?} …");
+    {
+        let mut w = open_writer(&out)?;
+        let ratings = compute_ratings(&counts.active_repos, &lang_map, "active-repos", args.primary_only);
         write_ratings(&mut w, &ratings)?;
     }
 
@@ -301,9 +319,10 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
     let reader = open(path)?;
 
     let mut pr_counts: HashMap<String, u64> = HashMap::new();
-    let mut pr_actor_sets: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut dev_actor_sets: HashMap<String, HashSet<String>> = HashMap::new();
     let mut issue_counts: HashMap<String, u64> = HashMap::new();
     let mut push_counts: HashMap<String, u64> = HashMap::new();
+    let mut active_repo_set: HashSet<String> = HashSet::new();
     let mut parse_errors = 0u64;
 
     for (i, line) in reader.lines().enumerate() {
@@ -344,16 +363,22 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
         match event_type {
             "PullRequestEvent" => {
                 *pr_counts.entry(repo.to_string()).or_insert(0) += count;
-                pr_actor_sets
+                dev_actor_sets
                     .entry(repo.to_string())
                     .or_default()
                     .insert(actor.to_string());
+                active_repo_set.insert(repo.to_string());
             }
             "IssuesEvent" => {
                 *issue_counts.entry(repo.to_string()).or_insert(0) += count;
             }
             "PushEvent" => {
                 *push_counts.entry(repo.to_string()).or_insert(0) += count;
+                dev_actor_sets
+                    .entry(repo.to_string())
+                    .or_default()
+                    .insert(actor.to_string());
+                active_repo_set.insert(repo.to_string());
             }
             _ => {}
         }
@@ -363,16 +388,23 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
         eprintln!("  ({parse_errors} parse errors)");
     }
 
-    let pr_actors: HashMap<String, usize> = pr_actor_sets
+    let dev_actors: HashMap<String, usize> = dev_actor_sets
         .into_iter()
         .map(|(repo, actors)| (repo, actors.len()))
         .collect();
 
+    // Each active repo contributes exactly 1 (regardless of event count).
+    let active_repos: HashMap<String, u64> = active_repo_set
+        .into_iter()
+        .map(|repo| (repo, 1u64))
+        .collect();
+
     Ok(RepoCounts {
         pr_counts,
-        pr_actors,
+        dev_actors,
         issue_counts,
         push_counts,
+        active_repos,
     })
 }
 

@@ -537,7 +537,8 @@
   <p>For each repository, the chosen event count is distributed across its languages:</p>
   <pre>rating[L] += event_count × (size_L / total_size)</pre>
   <p>
-    The <em>developer-activity</em> metric uses distinct pull-request contributors instead of
+    The <em>developer-activity</em> metric uses distinct contributors — the union of
+    unique actors from <code>PushEvent</code> and <code>PullRequestEvent</code> — instead of
     raw event count, making it neutral to per-developer commit-frequency habits.
   </p>
 
@@ -546,7 +547,7 @@
     <dt>Pull-request count</dt>
     <dd>Total <code>PullRequestEvent</code> actions per repository per month.</dd>
     <dt>Developer activity</dt>
-    <dd>Number of distinct actors that opened or acted on a pull request per repository per month.</dd>
+    <dd>Number of distinct actors that pushed code or acted on a pull request per repository per month. Each developer is counted once per repo regardless of how many times they pushed or opened PRs.</dd>
     <dt>Push count</dt>
     <dd>Total <code>PushEvent</code> actions per repository per month.</dd>
     <dt>Issue count</dt>
@@ -573,11 +574,11 @@ const CHART_DEFAULT_ACTIVE = 10;
 const TABLE_LANGUAGES = 100;
 
 const METRIC_DESC = {
-  'pr-count':           'How many pull-request actions each language attracted — a direct signal of active collaborative development.',
-  'developer-activity': 'How many distinct developers opened or acted on a pull request — each developer counted once per repo per month, regardless of PR volume.',
-  'push-count':         'How many push events each language received — reflects raw commit volume including solo and automated work.',
-  'issue-count':        'How many issue actions each language attracted — a proxy for community engagement and bug-tracking activity.',
-  'active-repos':       'How many distinct repositories were active in each language — each repo counts once regardless of how many events it generated.',
+  'pr-count':           'Total pull-request actions per language per month.',
+  'developer-activity': 'Distinct developers (push + PR) per repo, counted once each.',
+  'push-count':         'Total push events per language per month.',
+  'issue-count':        'Total issue actions per language per month.',
+  'active-repos':       'Distinct active repos per language — each repo counts once regardless of event volume.',
 };
 
 // ── ECharts init ─────────────────────────────────────────────────────────────
