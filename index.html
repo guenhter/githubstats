@@ -639,7 +639,7 @@ window.addEventListener('resize', () => {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-let currentType = 'pr-count';
+let currentType = document.getElementById('metric').value;
 // Tracks user legend selections keyed by language name. null = use default.
 let legendSelected = null;
 
