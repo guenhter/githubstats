@@ -72,13 +72,53 @@
       height: 520px;
       background: #161b22;
       border: 1px solid #21262d;
-      border-radius: 8px;
-      margin-bottom: 32px;
+      border-radius: 8px 8px 0 0;
+      margin-bottom: 0;
     }
 
     @media (max-width: 599px) {
-      #chart { height: 640px; }
+      #chart { height: 480px; }
     }
+
+    /* ── Chart legend (below the chart) ── */
+    #chart-legend {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      padding: 8px 14px;
+      margin-bottom: 32px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px 8px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      padding: 2px 7px 2px 5px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      color: #8b949e;
+      user-select: none;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .legend-item:hover { background: #21262d; }
+    .legend-item.active { color: #e6edf3; }
+    .legend-item.active:hover { background: #21262d; }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      opacity: 0.35;
+      transition: opacity 0.15s;
+    }
+    .legend-item.active .legend-dot { opacity: 1; }
 
     /* ── Table ── */
     .table-header {
@@ -280,16 +320,10 @@
     <option value="pr-count">Pull-request count</option>
     <option value="push-count">Push count</option>
     <option value="issue-count">Issue count</option>
+    <option value="active-repos">Active repos</option>
   </select>
 
   <span id="metricDesc" class="metric-desc"></span>
-
-  <label for="topN">Top languages</label>
-  <select id="topN">
-    <option value="10">10</option>
-    <option value="20" selected>20</option>
-    <option value="50">50</option>
-  </select>
 
   <label for="asOf">As of</label>
   <select id="asOf"></select>
@@ -307,6 +341,7 @@
 </div>
 
 <div id="chart"></div>
+<div id="chart-legend"></div>
 
 <div class="table-header">
   <h2 id="tableTitle">Top 100 languages</h2>
@@ -378,6 +413,14 @@
     <dd>Total <code>PushEvent</code> actions per repository per month.</dd>
     <dt>Issue count</dt>
     <dd>Total <code>IssuesEvent</code> actions per repository per month.</dd>
+    <dt>Active repos</dt>
+    <dd>
+      Number of distinct repositories that had at least one <code>PushEvent</code> or
+      <code>PullRequestEvent</code> in the month. Each qualifying repository contributes
+      exactly 1 to the score (distributed across its languages by byte share), regardless
+      of how many events it generated. This makes the metric neutral to per-repo activity
+      volume and highlights breadth of language adoption.
+    </dd>
   </dl>
 </footer>
 
@@ -388,6 +431,7 @@
 
 const DATA_BASE = 'data/language-ratings-all-';
 const CHART_LANGUAGES = 50;
+const CHART_DEFAULT_ACTIVE = 10;
 const TABLE_LANGUAGES = 100;
 
 const METRIC_DESC = {
@@ -395,6 +439,7 @@ const METRIC_DESC = {
   'developer-activity': 'How many distinct developers opened or acted on a pull request — filters out high-frequency individual committers.',
   'push-count':         'How many push events each language received — reflects raw commit volume including solo and automated work.',
   'issue-count':        'How many issue actions each language attracted — a proxy for community engagement and bug-tracking activity.',
+  'active-repos':       'How many distinct repositories were active in each language — each repo counts once regardless of how many events it generated.',
 };
 
 // ── ECharts init ─────────────────────────────────────────────────────────────
@@ -409,17 +454,16 @@ window.addEventListener('resize', () => {
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let currentType = 'pr-count';
+// Tracks user legend selections keyed by language name. null = use default.
+let legendSelected = null;
 
 // ── Controls ──────────────────────────────────────────────────────────────────
 
 document.getElementById('metric').addEventListener('change', e => {
   currentType = e.target.value;
+  legendSelected = null;
   document.getElementById('metricDesc').textContent = METRIC_DESC[currentType] ?? '';
   loadAndRender(currentType);
-});
-
-document.getElementById('topN').addEventListener('change', () => {
-  if (window._parsedData) renderAll(window._parsedData);
 });
 
 document.getElementById('asOf').addEventListener('change', () => {
@@ -501,11 +545,10 @@ function processData(records, selectedMonth) {
 // ── Render ────────────────────────────────────────────────────────────────────
 
 function renderAll(records) {
-  const topN = parseInt(document.getElementById('topN').value, 10);
   const selectedMonth = document.getElementById('asOf').value;
   const { months, byMonth, allLanguages, latestMonth } = processData(records, selectedMonth);
 
-  renderChart(months, byMonth, allLanguages.slice(0, topN));
+  renderChart(months, byMonth, allLanguages.slice(0, CHART_LANGUAGES));
   renderTable(months, byMonth, allLanguages.slice(0, TABLE_LANGUAGES), latestMonth);
 }
 
@@ -528,35 +571,19 @@ function renderChart(months, byMonth, languages) {
     connectNulls: true,
   }));
 
-  const legend = mobile
-    ? {
-        type: 'scroll',
-        orient: 'horizontal',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        textStyle: { color: '#8b949e', fontSize: 10 },
-        pageTextStyle: { color: '#8b949e' },
-        pageIconColor: '#58a6ff',
-        pageIconInactiveColor: '#30363d',
-        itemWidth: 12,
-        itemHeight: 8,
-      }
-    : {
-        type: 'scroll',
-        orient: 'vertical',
-        right: 0,
-        top: 0,
-        bottom: 0,
-        textStyle: { color: '#8b949e', fontSize: 11 },
-        pageTextStyle: { color: '#8b949e' },
-        pageIconColor: '#58a6ff',
-        pageIconInactiveColor: '#30363d',
-      };
+  // Build selected map: preserve user choices; default = only top CHART_DEFAULT_ACTIVE enabled
+  const selected = {};
+  languages.forEach((lang, i) => {
+    if (legendSelected && lang in legendSelected) {
+      selected[lang] = legendSelected[lang];
+    } else {
+      selected[lang] = i < CHART_DEFAULT_ACTIVE;
+    }
+  });
 
   const grid = mobile
-    ? { left: 48, right: 8, top: 12, bottom: 80 }
-    : { left: 56, right: 160, top: 16, bottom: 56 };
+    ? { left: 48, right: 8, top: 12, bottom: 40 }
+    : { left: 56, right: 16, top: 16, bottom: 40 };
 
   const option = {
     backgroundColor: '#161b22',
@@ -578,7 +605,10 @@ function renderChart(months, byMonth, languages) {
         return `<b>${month}</b><br>${rows}`;
       },
     },
-    legend,
+    legend: {
+      show: false,
+      selected,
+    },
     xAxis: {
       type: 'category',
       data: months,
@@ -606,6 +636,50 @@ function renderChart(months, byMonth, languages) {
   };
 
   chart.setOption(option, true);
+
+  // Render the custom HTML legend below the chart
+  renderLegend(languages, selected);
+}
+
+// ── Chart legend ──────────────────────────────────────────────────────────────
+
+function renderLegend(languages, selected) {
+  const container = document.getElementById('chart-legend');
+  container.innerHTML = '';
+
+  // Get actual colors from ECharts so they always match the chart lines
+  const chartOption = chart.getOption();
+  const palette = (chartOption.color && chartOption.color.length)
+    ? chartOption.color
+    : ['#5470c6','#91cc75','#fac858','#ee6666','#73c0de','#3ba272','#fc8452','#9a60b4','#ea7ccc'];
+
+  languages.forEach((lang, i) => {
+    const color = palette[i % palette.length];
+    const isActive = !!selected[lang];
+
+    const item = document.createElement('span');
+    item.className = 'legend-item' + (isActive ? ' active' : '');
+    item.dataset.lang = lang;
+
+    const dot = document.createElement('span');
+    dot.className = 'legend-dot';
+    dot.style.background = color;
+
+    const label = document.createElement('span');
+    label.textContent = lang;
+
+    item.appendChild(dot);
+    item.appendChild(label);
+
+    item.addEventListener('click', () => {
+      const active = item.classList.toggle('active');
+      if (!legendSelected) legendSelected = {};
+      legendSelected[lang] = active;
+      chart.dispatchAction({ type: active ? 'legendSelect' : 'legendUnSelect', name: lang });
+    });
+
+    container.appendChild(item);
+  });
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
