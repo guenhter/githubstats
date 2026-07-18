@@ -100,9 +100,13 @@
     }
 
     .table-wrap {
-      overflow-x: auto;
+      overflow-x: clip;
       border: 1px solid #21262d;
       border-radius: 8px;
+    }
+
+    @media (max-width: 599px) {
+      .table-wrap { overflow-x: auto; }
     }
 
     table {
@@ -116,7 +120,7 @@
       color: #8b949e;
       font-weight: 500;
       text-align: left;
-      padding: 10px 14px;
+      padding: 10px 12px;
       border-bottom: 1px solid #21262d;
       white-space: nowrap;
     }
@@ -128,7 +132,7 @@
     tbody tr:hover           { background: #1c2128; }
 
     tbody td {
-      padding: 8px 14px;
+      padding: 8px 12px;
       border-bottom: 1px solid #21262d;
       white-space: nowrap;
     }
@@ -554,6 +558,7 @@ function renderChart(months, byMonth, languages) {
         color: '#8b949e',
         fontSize: 11,
         rotate: 30,
+        interval: 0,
         formatter(v) {
           return v.endsWith('-01') ? v.slice(0, 4) : '';
         },
@@ -594,7 +599,7 @@ function renderTable(months, byMonth, languages, latestMonth) {
   document.getElementById('thLatest').textContent      = `Current (${latestMonth}) %`;
   document.getElementById('thYearAgo').textContent     = `${yearsLabel} (${compareMonth}) %`;
   document.getElementById('thRankYearAgo').textContent = `Rank (${compareMonth})`;
-  document.getElementById('thTrend').textContent       = `Trend (${compareYears * 12} mo)`;
+  document.getElementById('thTrend').textContent       = `Trend (${compareYears} y)`;
 
   const latestData  = byMonth.get(latestMonth);
   const compareData = byMonth.get(compareMonth);
