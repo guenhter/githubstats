@@ -551,6 +551,15 @@
 </div>
 
 <footer>
+  <h2>Motivation</h2>
+  <p>
+    Most language popularity indexes are based on search engine queries, tutorial views, or expert
+    opinion. This index is based on actual developer activity on GitHub — real code, real commits,
+    real pull requests. <a href="https://madnight.github.io/githut/#/pull_requests/2024/1" target="_blank" rel="noopener">GitHut 2.0</a>
+    took the same approach, but is no longer maintained. This project picks up where it left off,
+    with up-to-date data.
+  </p>
+
   <h2>About this data</h2>
 
   <h3>Source</h3>
@@ -589,25 +598,13 @@
     raw event count, making it neutral to per-developer commit-frequency habits.
   </p>
 
-  <h3>Metrics</h3>
-  <dl>
-    <dt>Pull-request count</dt>
-    <dd>Total <code>PullRequestEvent</code> actions per repository per month.</dd>
-    <dt>Developer activity</dt>
-    <dd>Number of distinct actors that pushed code or acted on a pull request per repository per month. Each developer is counted once per repo regardless of how many times they pushed or opened PRs.</dd>
-    <dt>Push count</dt>
-    <dd>Total <code>PushEvent</code> actions per repository per month.</dd>
-    <dt>Issue count</dt>
-    <dd>Total <code>IssuesEvent</code> actions per repository per month.</dd>
-    <dt>Active repos</dt>
-    <dd>
-      Number of distinct repositories that had at least one <code>PushEvent</code> or
-      <code>PullRequestEvent</code> in the month. Each qualifying repository contributes
-      exactly 1 to the score (distributed across its languages by byte share), regardless
-      of how many events it generated. This makes the metric neutral to per-repo activity
-      volume and highlights breadth of language adoption.
-    </dd>
-  </dl>
+  <h3>Alternative indexes</h3>
+  <ul style="margin: 8px 0 8px 16px; line-height: 2;">
+    <li><a href="https://madnight.github.io/githut/#/pull_requests/2024/1" target="_blank" rel="noopener">GitHut 2.0</a> — GitHub language popularity by event type</li>
+    <li><a href="https://www.tiobe.com/tiobe-index/" target="_blank" rel="noopener">TIOBE Index</a> — search-engine-based language popularity index</li>
+    <li><a href="https://pypl.github.io/PYPL.html" target="_blank" rel="noopener">PYPL Index</a> — popularity of programming languages by tutorial searches</li>
+    <li><a href="https://redmonk.com/sogrady/category/programming-languages/" target="_blank" rel="noopener">RedMonk Rankings</a> — language rankings combining GitHub and Stack Overflow data</li>
+  </ul>
 </footer>
 
 </div><!-- /.page-wrap -->
