@@ -36,9 +36,15 @@
     /* ── Controls ── */
     .controls {
       display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .controls-row {
+      display: flex;
       align-items: center;
       gap: 16px;
-      margin-bottom: 24px;
       flex-wrap: wrap;
     }
 
@@ -123,7 +129,7 @@
     /* ── Table ── */
     .table-header {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 12px;
       margin-bottom: 12px;
     }
@@ -137,6 +143,10 @@
     .table-header span {
       font-size: 0.8rem;
       color: #8b949e;
+    }
+
+    .table-header label {
+      margin-left: auto;
     }
 
     .table-wrap {
@@ -314,30 +324,23 @@
 <h1>GitHub Language Trends</h1>
 
 <div class="controls">
-  <label for="metric">Metric</label>
-  <select id="metric">
-    <option value="developer-activity" selected>Developer activity</option>
-    <option value="pr-count">Pull-request count</option>
-    <option value="push-count">Push count</option>
-    <option value="issue-count">Issue count</option>
-    <option value="active-repos">Active repos</option>
-  </select>
+  <div class="controls-row">
+    <label for="metric">Metric</label>
+    <select id="metric">
+      <option value="developer-activity" selected>Developer activity</option>
+      <option value="pr-count">Pull-request count</option>
+      <option value="push-count">Push count</option>
+      <option value="issue-count">Issue count</option>
+      <option value="active-repos">Active repos</option>
+    </select>
 
-  <span id="metricDesc" class="metric-desc"></span>
+    <span id="metricDesc" class="metric-desc"></span>
+  </div>
 
-  <label for="asOf">As of</label>
-  <select id="asOf"></select>
-
-  <label for="compareYears">Compare vs</label>
-  <select id="compareYears">
-    <option value="1" selected>1 year ago</option>
-    <option value="2">2 years ago</option>
-    <option value="3">3 years ago</option>
-    <option value="5">5 years ago</option>
-    <option value="10">10 years ago</option>
-  </select>
-
-
+  <div class="controls-row">
+    <label for="asOf">As of</label>
+    <select id="asOf"></select>
+  </div>
 </div>
 
 <div id="chart"></div>
@@ -346,6 +349,14 @@
 <div class="table-header">
   <h2 id="tableTitle">Top 100 languages</h2>
   <span id="tableCaption"></span>
+  <label for="compareYears">Compare vs</label>
+  <select id="compareYears">
+    <option value="1" selected>1 year ago</option>
+    <option value="2">2 years ago</option>
+    <option value="3">3 years ago</option>
+    <option value="5">5 years ago</option>
+    <option value="10">10 years ago</option>
+  </select>
 </div>
 <div class="table-wrap">
   <table>
@@ -436,7 +447,7 @@ const TABLE_LANGUAGES = 100;
 
 const METRIC_DESC = {
   'pr-count':           'How many pull-request actions each language attracted — a direct signal of active collaborative development.',
-  'developer-activity': 'How many distinct developers opened or acted on a pull request — filters out high-frequency individual committers.',
+  'developer-activity': 'How many distinct developers opened or acted on a pull request — each developer counted once per repo per month, regardless of PR volume.',
   'push-count':         'How many push events each language received — reflects raw commit volume including solo and automated work.',
   'issue-count':        'How many issue actions each language attracted — a proxy for community engagement and bug-tracking activity.',
   'active-repos':       'How many distinct repositories were active in each language — each repo counts once regardless of how many events it generated.',
