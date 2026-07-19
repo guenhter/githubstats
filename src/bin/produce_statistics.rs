@@ -1,7 +1,7 @@
 //! produce-statistics
 //!
 //! Joins an archive CSV file (output of `github_archive_loader` / `filter_archive`)
-//! with a projects-languages JSONL file and produces five language-rating files
+//! with a projects-languages JSONL file and produces six language-rating files
 //! in the specified output directory.
 //!
 //! Output files (JSONL, sorted descending by rating):
@@ -10,11 +10,12 @@
 //!   language-ratings-YYYY-MM-push-count.jsonl
 //!   language-ratings-YYYY-MM-developer-activity.jsonl
 //!   language-ratings-YYYY-MM-active-repos.jsonl
+//!   language-ratings-YYYY-MM-star-count.jsonl
 //!
 //! With --primary-only the filenames gain a "-primary" suffix:
 //!   language-ratings-YYYY-MM-pr-count-primary.jsonl  (etc.)
 //!
-//! Rating formula (all five types):
+//! Rating formula (all six types):
 //!
 //!   Default (proportional):
 //!     For each repo, distribute the event count across all its languages
@@ -26,6 +27,7 @@
 //!                         (distinct actors across PullRequestEvent + PushEvent)
 //!     active-repos:       rating[L] += 1                   × (size_L / total_size)
 //!                         (once per repo that had any PushEvent or PullRequestEvent)
+//!     star-count:         rating[L] += star_count           × (size_L / total_size)
 //!
 //!   --primary-only (experimental):
 //!     All credit goes to the single dominant (largest-by-bytes) language;
@@ -37,11 +39,13 @@
 //!     developer-activity: rating[primary] += distinct_contributors
 //!                         (distinct actors across PullRequestEvent + PushEvent)
 //!     active-repos:       rating[primary] += 1
+//!     star-count:         rating[primary] += star_count
 //!
 //! Event types read from the archive CSV:
 //!   PullRequestEvent → pr-count, developer-activity, and active-repos
 //!   IssuesEvent      → issue-count
 //!   PushEvent        → push-count, developer-activity, and active-repos
+//!   WatchEvent       → star-count
 //!
 //! Input formats:
 //!   --archive   CSV: actor,repo,event_type,action,language,count
@@ -74,7 +78,7 @@ type LangMap = HashMap<String, (u64, Vec<(String, u64)>)>;
 #[command(
     name = "produce-statistics",
     about = "Compute weighted language ratings from an archive CSV and language breakdowns.\n\
-             Produces four JSONL files in --output-dir, one per statistic type."
+             Produces six JSONL files in --output-dir, one per statistic type."
 )]
 struct Args {
     /// Archive CSV file produced by github_archive_loader / filter_archive.
@@ -88,7 +92,7 @@ struct Args {
     #[arg(long)]
     languages: PathBuf,
 
-    /// Directory where the four output JSONL files will be written.
+    /// Directory where the six output JSONL files will be written.
     /// Files are named: language-ratings-YYYY-MM-<type>.jsonl
     #[arg(long)]
     output_dir: PathBuf,
@@ -128,6 +132,8 @@ struct RepoCounts {
     push_counts: HashMap<String, u64>,
     /// Repos that had at least one PushEvent or PullRequestEvent (value is always 1).
     active_repos: HashMap<String, u64>,
+    /// Total WatchEvent (star) count per repo.
+    star_counts: HashMap<String, u64>,
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -150,11 +156,12 @@ fn main() -> Result<()> {
     eprintln!("Reading activity from {:?} …", args.archive);
     let counts = collect_counts(&args.archive)?;
     eprintln!(
-        "  {} repos with PR activity, {} with issue activity, {} with push activity, {} active repos",
+        "  {} repos with PR activity, {} with issue activity, {} with push activity, {} active repos, {} with star activity",
         counts.pr_counts.len(),
         counts.issue_counts.len(),
         counts.push_counts.len(),
         counts.active_repos.len(),
+        counts.star_counts.len(),
     );
 
     // ── pr-count ─────────────────────────────────────────────────────────────
@@ -233,6 +240,25 @@ fn main() -> Result<()> {
             &counts.active_repos,
             &lang_map,
             "active-repos",
+            args.primary_only,
+        );
+        write_ratings(&mut w, &ratings)?;
+    }
+
+    // ── star-count ───────────────────────────────────────────────────────────
+    let out = output_path(
+        &args.output_dir,
+        &year_month,
+        "star-count",
+        args.primary_only,
+    );
+    eprintln!("Writing {out:?} …");
+    {
+        let mut w = open_writer(&out)?;
+        let ratings = compute_ratings(
+            &counts.star_counts,
+            &lang_map,
+            "star-count",
             args.primary_only,
         );
         write_ratings(&mut w, &ratings)?;
@@ -355,6 +381,7 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
     let mut issue_counts: HashMap<String, u64> = HashMap::new();
     let mut push_counts: HashMap<String, u64> = HashMap::new();
     let mut active_repo_set: HashSet<String> = HashSet::new();
+    let mut star_counts: HashMap<String, u64> = HashMap::new();
     let mut parse_errors = 0u64;
 
     for (i, line) in reader.lines().enumerate() {
@@ -412,6 +439,9 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
                     .insert(actor.to_string());
                 active_repo_set.insert(repo.to_string());
             }
+            "WatchEvent" => {
+                *star_counts.entry(repo.to_string()).or_insert(0) += count;
+            }
             _ => {}
         }
     }
@@ -437,6 +467,7 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
         issue_counts,
         push_counts,
         active_repos,
+        star_counts,
     })
 }
 

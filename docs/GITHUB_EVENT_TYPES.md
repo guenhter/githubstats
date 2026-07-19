@@ -1,13 +1,14 @@
 # GitHub Event Types
 
 The archive CSV contains one row per unique `(actor, repo, event_type, action)` tuple per month.
-`produce_statistics` uses three event types:
+`produce_statistics` uses four event types:
 
 | Event type | Used for |
 |---|---|
 | `PullRequestEvent` | `pr-count`, `developer-activity` |
 | `IssuesEvent` | `issue-count` |
 | `PushEvent` | `push-count` |
+| `WatchEvent` | `star-count` |
 
 Full list of event types that appear in GH Archive data:
 

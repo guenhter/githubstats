@@ -81,14 +81,14 @@ awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' \
       --workers 10 \
   > "data/languages-${YEAR}-${MONTH}.jsonl"
 
-# Step 4 — compute weighted per-language ratings (five output files)
+# Step 4 — compute weighted per-language ratings (six output files)
 cargo run --release --bin produce_statistics -- \
   --archive "data/archive-${YEAR}${MONTH}-filtered.csv" \
   --languages "data/languages-${YEAR}-${MONTH}.jsonl" \
   --output-dir data/
 
 # Step 5 — pack all monthly ratings into combined files (run once after all months are produced)
-for TYPE in pr-count issue-count push-count developer-activity active-repos; do
+for TYPE in pr-count issue-count push-count developer-activity active-repos star-count; do
   cargo run --release --bin pack_statistics -- \
     --type "$TYPE" \
     --input-dir data/ \
@@ -98,7 +98,7 @@ done
 
 ### Rating files
 
-`produce_statistics` writes five JSONL files, all sorted descending by rating:
+`produce_statistics` writes six JSONL files, all sorted descending by rating:
 
 | File | Signal | Formula |
 |---|---|---|
@@ -107,6 +107,7 @@ done
 | `language-ratings-YYYY-MM-push-count.jsonl` | Push volume | `rating[L] += push_count × (size_L / total_size)` |
 | `language-ratings-YYYY-MM-developer-activity.jsonl` | Distinct contributors (PR + push) | `rating[L] += distinct_contributors × (size_L / total_size)` |
 | `language-ratings-YYYY-MM-active-repos.jsonl` | Active repository breadth | `rating[L] += 1 × (size_L / total_size)` per active repo |
+| `language-ratings-YYYY-MM-star-count.jsonl` | Stars (WatchEvents) | `rating[L] += star_count × (size_L / total_size)` |
 
 Each record:
 ```json
@@ -122,6 +123,7 @@ Each record:
 | `language-ratings-all-push-count.jsonl` | All months, push-count, sorted chronologically |
 | `language-ratings-all-developer-activity.jsonl` | All months, developer-activity, sorted chronologically |
 | `language-ratings-all-active-repos.jsonl` | All months, active-repos, sorted chronologically |
+| `language-ratings-all-star-count.jsonl` | All months, star-count, sorted chronologically |
 
 Each record has a `month` field prepended:
 ```json
