@@ -57,8 +57,10 @@ struct Args {
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    run(Args::parse())
+}
 
+fn run(args: Args) -> Result<()> {
     validate_type(&args.r#type)?;
 
     // Collect all matching input files, sorted chronologically.
@@ -152,7 +154,7 @@ fn collect_input_files(dir: &PathBuf, stat_type: &str) -> Result<Vec<PathBuf>> {
 
 /// Read one monthly ratings file and write every record to `w`, injecting
 /// `"month": month` as the first field.  Returns the number of records written.
-fn pack_file(path: &PathBuf, month: &str, w: &mut BufWriter<File>) -> Result<usize> {
+fn pack_file(path: &PathBuf, month: &str, w: &mut impl Write) -> Result<usize> {
     let reader =
         BufReader::new(File::open(path).with_context(|| format!("cannot open {:?}", path))?);
     let mut count = 0;
@@ -202,4 +204,52 @@ fn month_from_path(path: &Path) -> String {
         return rest[..7].to_string();
     }
     name
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pack_two_months() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dir = tmp.path();
+
+        // Write two dummy monthly input files.
+        std::fs::write(
+            dir.join("language-ratings-2024-01-pr-count.jsonl"),
+            r#"{"language":"Rust","rating":100.0,"percentage":50.0}
+{"language":"Go","rating":80.0,"percentage":40.0}
+"#,
+        )?;
+        std::fs::write(
+            dir.join("language-ratings-2024-02-pr-count.jsonl"),
+            r#"{"language":"TypeScript","rating":200.0,"percentage":60.0}
+{"language":"Rust","rating":120.0,"percentage":36.0}
+"#,
+        )?;
+
+        run(Args {
+            r#type: "pr-count".to_string(),
+            input_dir: dir.to_path_buf(),
+            output_dir: dir.to_path_buf(),
+        })?;
+
+        // Read the output file.
+        let out_path = dir.join("language-ratings-all-pr-count.jsonl");
+        let content = std::fs::read_to_string(&out_path)?;
+
+        assert_eq!(
+            content,
+            r#"{"month":"2024-01","language":"Rust","rating":100.0,"percentage":50.0}
+{"month":"2024-01","language":"Go","rating":80.0,"percentage":40.0}
+{"month":"2024-02","language":"TypeScript","rating":200.0,"percentage":60.0}
+{"month":"2024-02","language":"Rust","rating":120.0,"percentage":36.0}
+"#
+        );
+
+        Ok(())
+    }
 }
