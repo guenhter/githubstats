@@ -25,7 +25,10 @@ use std::path::{Path, PathBuf};
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "filter_archive", about = "Filter an aggregated events CSV file")]
+#[command(
+    name = "filter_archive",
+    about = "Filter an aggregated events CSV file"
+)]
 struct Args {
     /// Input CSV file (actor,repo,event_type,action,language,count)
     #[arg(long)]
@@ -77,14 +80,20 @@ fn main() -> Result<()> {
     let rows = filter_issue_only_actors(rows);
 
     let surviving = rows.len();
-    let removed_pct = if total == 0 { 0.0 } else { 100.0 * (total - surviving) as f64 / total as f64 };
+    let removed_pct = if total == 0 {
+        0.0
+    } else {
+        100.0 * (total - surviving) as f64 / total as f64
+    };
 
     let output = &args.output;
     write_csv(rows, output)?;
 
     eprintln!(
         "  [total]  {:>8} removed ({:.1}%),  {:>8} remaining",
-        total - surviving, removed_pct, surviving,
+        total - surviving,
+        removed_pct,
+        surviving,
     );
 
     Ok(())

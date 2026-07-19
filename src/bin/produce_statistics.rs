@@ -53,7 +53,7 @@
 //!
 //! All progress and diagnostic messages go to stderr.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use serde::Deserialize;
 use serde_json::json;
@@ -167,7 +167,12 @@ fn main() -> Result<()> {
     }
 
     // ── issue-count ──────────────────────────────────────────────────────────
-    let out = output_path(&args.output_dir, &year_month, "issue-count", args.primary_only);
+    let out = output_path(
+        &args.output_dir,
+        &year_month,
+        "issue-count",
+        args.primary_only,
+    );
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
@@ -176,7 +181,12 @@ fn main() -> Result<()> {
     }
 
     // ── push-count ───────────────────────────────────────────────────────────
-    let out = output_path(&args.output_dir, &year_month, "push-count", args.primary_only);
+    let out = output_path(
+        &args.output_dir,
+        &year_month,
+        "push-count",
+        args.primary_only,
+    );
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
@@ -185,7 +195,12 @@ fn main() -> Result<()> {
     }
 
     // ── developer-activity ───────────────────────────────────────────────────
-    let out = output_path(&args.output_dir, &year_month, "developer-activity", args.primary_only);
+    let out = output_path(
+        &args.output_dir,
+        &year_month,
+        "developer-activity",
+        args.primary_only,
+    );
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
@@ -195,16 +210,31 @@ fn main() -> Result<()> {
             .iter()
             .map(|(repo, n)| (repo.clone(), *n as u64))
             .collect();
-        let ratings = compute_ratings(&dev_counts, &lang_map, "developer-activity", args.primary_only);
+        let ratings = compute_ratings(
+            &dev_counts,
+            &lang_map,
+            "developer-activity",
+            args.primary_only,
+        );
         write_ratings(&mut w, &ratings)?;
     }
 
     // ── active-repos ─────────────────────────────────────────────────────────
-    let out = output_path(&args.output_dir, &year_month, "active-repos", args.primary_only);
+    let out = output_path(
+        &args.output_dir,
+        &year_month,
+        "active-repos",
+        args.primary_only,
+    );
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
-        let ratings = compute_ratings(&counts.active_repos, &lang_map, "active-repos", args.primary_only);
+        let ratings = compute_ratings(
+            &counts.active_repos,
+            &lang_map,
+            "active-repos",
+            args.primary_only,
+        );
         write_ratings(&mut w, &ratings)?;
     }
 
@@ -243,7 +273,9 @@ fn infer_year_month(path: &PathBuf) -> Result<String> {
 /// With `primary_only` the filename gains a "-primary" suffix before ".jsonl".
 fn output_path(dir: &Path, year_month: &str, kind: &str, primary_only: bool) -> PathBuf {
     if primary_only {
-        dir.join(format!("language-ratings-{year_month}-{kind}-primary.jsonl"))
+        dir.join(format!(
+            "language-ratings-{year_month}-{kind}-primary.jsonl"
+        ))
     } else {
         dir.join(format!("language-ratings-{year_month}-{kind}.jsonl"))
     }
@@ -346,10 +378,10 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
             parse_errors += 1;
             continue;
         }
-        let actor      = fields[0].trim_matches('"');
-        let repo       = fields[1].trim_matches('"');
+        let actor = fields[0].trim_matches('"');
+        let repo = fields[1].trim_matches('"');
         let event_type = fields[2].trim_matches('"');
-        let count_str  = fields[5].trim_matches('"');
+        let count_str = fields[5].trim_matches('"');
 
         let count: u64 = match count_str.parse() {
             Ok(v) => v,

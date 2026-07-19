@@ -225,7 +225,10 @@ async fn main() -> Result<()> {
         .await
         .context("collect_events task panicked")??;
 
-    eprintln!("Download chain done in {:.1}s", start.elapsed().as_secs_f64());
+    eprintln!(
+        "Download chain done in {:.1}s",
+        start.elapsed().as_secs_f64()
+    );
 
     write_csv(events, &args.output)?;
 
@@ -400,14 +403,16 @@ async fn aggregate_events(mut rx: mpsc::Receiver<RawEvent>) -> Result<Vec<Aggreg
 
     let records: Vec<AggregatedEvent> = map
         .into_iter()
-        .map(|((actor, repo, event_type, action), (count, language))| AggregatedEvent {
-            actor,
-            repo,
-            event_type,
-            action,
-            language,
-            count,
-        })
+        .map(
+            |((actor, repo, event_type, action), (count, language))| AggregatedEvent {
+                actor,
+                repo,
+                event_type,
+                action,
+                language,
+                count,
+            },
+        )
         .collect();
 
     eprintln!(
@@ -434,8 +439,12 @@ fn write_csv(rows: Vec<AggregatedEvent>, path: &PathBuf) -> Result<()> {
         let etype = csv_field(&row.event_type);
         let action = csv_field(&row.action);
         let language = csv_field(&row.language);
-        writeln!(w, "{actor},{repo},{etype},{action},{language},{}", row.count)
-            .context("write CSV row")?;
+        writeln!(
+            w,
+            "{actor},{repo},{etype},{action},{language},{}",
+            row.count
+        )
+        .context("write CSV row")?;
     }
 
     w.flush().context("flush CSV")?;

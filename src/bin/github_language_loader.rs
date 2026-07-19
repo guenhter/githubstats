@@ -23,10 +23,10 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use humanize_duration::prelude::DurationExt;
 use humanize_duration::Truncate;
+use humanize_duration::prelude::DurationExt;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::sync::broadcast;
@@ -208,7 +208,9 @@ async fn write_results(mut rx: broadcast::Receiver<BatchOutcome>) -> Result<u64>
             }
             Err(broadcast::error::RecvError::Closed) => break,
             Err(broadcast::error::RecvError::Lagged(n)) => {
-                eprintln!("  [writer] warning: {n} outcomes skipped due to lag — output may be incomplete");
+                eprintln!(
+                    "  [writer] warning: {n} outcomes skipped due to lag — output may be incomplete"
+                );
             }
         }
     }
@@ -399,10 +401,7 @@ fn extract_rate_limit(resp: &Value) -> Option<(i64, i64)> {
     Some((rl.get("cost")?.as_i64()?, rl.get("remaining")?.as_i64()?))
 }
 
-fn extract_languages(
-    resp: &Value,
-    repos: &[&str],
-) -> Vec<(String, RepoLanguages)> {
+fn extract_languages(resp: &Value, repos: &[&str]) -> Vec<(String, RepoLanguages)> {
     let data = match resp.get("data").and_then(|d| d.as_object()) {
         Some(d) => d,
         None => return vec![],
@@ -417,11 +416,14 @@ fn extract_languages(
             } else {
                 parse_language_entries(Some(node))
             };
-            Some((repo.to_string(), RepoLanguages {
-                repo: repo.to_string(),
-                total_size,
-                languages: entries,
-            }))
+            Some((
+                repo.to_string(),
+                RepoLanguages {
+                    repo: repo.to_string(),
+                    total_size,
+                    languages: entries,
+                },
+            ))
         })
         .collect()
 }
@@ -448,7 +450,10 @@ fn parse_language_entries(node: Option<&Value>) -> (u64, Vec<LanguageEntry>) {
 fn edge_to_entry(edge: &Value) -> Option<LanguageEntry> {
     let size = edge.get("size")?.as_u64()?;
     let name = edge.get("node")?.get("name")?.as_str()?.to_string();
-    Some(LanguageEntry { language: name, size })
+    Some(LanguageEntry {
+        language: name,
+        size,
+    })
 }
 
 /// Build a batched GraphQL query that aliases each repo as r0…rN.

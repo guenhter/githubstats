@@ -25,11 +25,11 @@
 //!   pack_statistics --type pr-count
 //!   pack_statistics --type active-repos --input-dir data/ --output-dir data/
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -72,7 +72,11 @@ fn main() -> Result<()> {
     }
     input_files.sort();
 
-    eprintln!("Found {} monthly files for type '{}'", input_files.len(), args.r#type);
+    eprintln!(
+        "Found {} monthly files for type '{}'",
+        input_files.len(),
+        args.r#type
+    );
 
     // Open output file.
     std::fs::create_dir_all(&args.output_dir)
@@ -83,8 +87,7 @@ fn main() -> Result<()> {
         .join(format!("language-ratings-all-{}.jsonl", args.r#type));
     eprintln!("Writing {:?} …", out_path);
 
-    let file = File::create(&out_path)
-        .with_context(|| format!("cannot create {:?}", out_path))?;
+    let file = File::create(&out_path).with_context(|| format!("cannot create {:?}", out_path))?;
     let mut w = BufWriter::new(file);
 
     // Stream each monthly file, injecting the "month" field into every record.
@@ -104,7 +107,13 @@ fn main() -> Result<()> {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn validate_type(t: &str) -> Result<()> {
-    const VALID: &[&str] = &["pr-count", "issue-count", "push-count", "developer-activity", "active-repos"];
+    const VALID: &[&str] = &[
+        "pr-count",
+        "issue-count",
+        "push-count",
+        "developer-activity",
+        "active-repos",
+    ];
     if VALID.contains(&t) {
         Ok(())
     } else {
@@ -121,8 +130,8 @@ fn validate_type(t: &str) -> Result<()> {
 fn collect_input_files(dir: &PathBuf, stat_type: &str) -> Result<Vec<PathBuf>> {
     let suffix = format!("-{stat_type}.jsonl");
 
-    let entries = std::fs::read_dir(dir)
-        .with_context(|| format!("cannot read directory {:?}", dir))?;
+    let entries =
+        std::fs::read_dir(dir).with_context(|| format!("cannot read directory {:?}", dir))?;
 
     let mut files = Vec::new();
     for entry in entries {
@@ -143,9 +152,8 @@ fn collect_input_files(dir: &PathBuf, stat_type: &str) -> Result<Vec<PathBuf>> {
 /// Read one monthly ratings file and write every record to `w`, injecting
 /// `"month": month` as the first field.  Returns the number of records written.
 fn pack_file(path: &PathBuf, month: &str, w: &mut BufWriter<File>) -> Result<usize> {
-    let reader = BufReader::new(
-        File::open(path).with_context(|| format!("cannot open {:?}", path))?,
-    );
+    let reader =
+        BufReader::new(File::open(path).with_context(|| format!("cannot open {:?}", path))?);
     let mut count = 0;
     for (i, line) in reader.lines().enumerate() {
         let line = line.context("read error")?;
@@ -160,7 +168,10 @@ fn pack_file(path: &PathBuf, month: &str, w: &mut BufWriter<File>) -> Result<usi
                 if let Some(map) = obj.as_object_mut() {
                     // Insert "month" at the front by rebuilding the map in order.
                     let mut ordered = serde_json::Map::with_capacity(map.len() + 1);
-                    ordered.insert("month".to_string(), serde_json::Value::String(month.to_string()));
+                    ordered.insert(
+                        "month".to_string(),
+                        serde_json::Value::String(month.to_string()),
+                    );
                     ordered.extend(map.iter().map(|(k, v)| (k.clone(), v.clone())));
                     serde_json::to_writer(&mut *w, &serde_json::Value::Object(ordered))
                         .context("serialise")?;
@@ -177,17 +188,17 @@ fn pack_file(path: &PathBuf, month: &str, w: &mut BufWriter<File>) -> Result<usi
 }
 
 /// Extract "YYYY-MM" from a path like `.../language-ratings-2024-01-pr-count.jsonl`.
-fn month_from_path(path: &PathBuf) -> String {
+fn month_from_path(path: &Path) -> String {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
 
     // The 7-char YYYY-MM sits right after "language-ratings-".
-    if let Some(rest) = name.strip_prefix("language-ratings-") {
-        if rest.len() >= 7 {
-            return rest[..7].to_string();
-        }
+    if let Some(rest) = name.strip_prefix("language-ratings-")
+        && rest.len() >= 7
+    {
+        return rest[..7].to_string();
     }
     name
 }
