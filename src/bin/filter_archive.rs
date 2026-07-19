@@ -19,7 +19,6 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
@@ -420,29 +419,26 @@ fn log_filter(name: &str, before: usize, after: usize, note: &str) {
 /// Reads the CSV into a `Vec<Row>`, skipping the header and any malformed lines.
 fn read_csv(path: &Path) -> Result<Vec<Row>> {
     let file = File::open(path).with_context(|| format!("open {path:?}"))?;
-    let reader = BufReader::with_capacity(1 << 20, file);
-    let mut lines = reader.lines();
-
-    // Consume and validate header
-    let header = lines.next().with_context(|| "file is empty")??;
-    if !header.starts_with("actor,") {
-        eprintln!("WARN: unexpected header: {header}");
-    }
+    let mut rdr = csv::ReaderBuilder::new()
+        .buffer_capacity(1 << 20)
+        .from_reader(file);
 
     let mut rows = Vec::new();
     let mut bad = 0u64;
 
-    for line_result in lines {
-        let line = line_result.context("I/O error reading line")?;
-        if line.is_empty() {
-            continue;
-        }
-        let fields = split_csv_line(&line);
-        if fields.len() != 6 {
+    for result in rdr.records() {
+        let record = match result {
+            Ok(r) => r,
+            Err(_) => {
+                bad += 1;
+                continue;
+            }
+        };
+        if record.len() != 6 {
             bad += 1;
             continue;
         }
-        let count: u64 = match fields[5].trim().parse() {
+        let count: u64 = match record[5].trim().parse() {
             Ok(n) => n,
             Err(_) => {
                 bad += 1;
@@ -450,11 +446,11 @@ fn read_csv(path: &Path) -> Result<Vec<Row>> {
             }
         };
         rows.push(Row {
-            actor: fields[0].clone(),
-            repo: fields[1].clone(),
-            event_type: fields[2].clone(),
-            action: fields[3].clone(),
-            language: fields[4].clone(),
+            actor: record[0].to_string(),
+            repo: record[1].to_string(),
+            event_type: record[2].to_string(),
+            action: record[3].to_string(),
+            language: record[4].to_string(),
             count,
         });
     }
@@ -469,21 +465,21 @@ fn read_csv(path: &Path) -> Result<Vec<Row>> {
 /// Writes rows as RFC 4180 CSV.
 fn write_csv(rows: Vec<Row>, path: &Path) -> Result<()> {
     let file = File::create(path).with_context(|| format!("create {path:?}"))?;
-    let mut w = BufWriter::new(file);
-    w.write_all(b"actor,repo,event_type,action,language,count\n")
+    let mut w = csv::WriterBuilder::new()
+        .terminator(csv::Terminator::Any(b'\n'))
+        .from_writer(file);
+    w.write_record(["actor", "repo", "event_type", "action", "language", "count"])
         .context("write header")?;
 
     for r in &rows {
-        let actor = csv_field(&r.actor);
-        let repo = csv_field(&r.repo);
-        let event_type = csv_field(&r.event_type);
-        let action = csv_field(&r.action);
-        let language = csv_field(&r.language);
-        writeln!(
-            w,
-            "{actor},{repo},{event_type},{action},{language},{}",
-            r.count
-        )
+        w.write_record([
+            &r.actor,
+            &r.repo,
+            &r.event_type,
+            &r.action,
+            &r.language,
+            &r.count.to_string(),
+        ])
         .context("write row")?;
     }
 
@@ -493,46 +489,6 @@ fn write_csv(rows: Vec<Row>, path: &Path) -> Result<()> {
         rows.len()
     );
     Ok(())
-}
-
-// ── CSV helpers ───────────────────────────────────────────────────────────────
-
-/// Quotes a CSV field if it contains a comma, double-quote, or newline.
-fn csv_field(s: &str) -> std::borrow::Cow<'_, str> {
-    if s.contains([',', '"', '\n', '\r']) {
-        std::borrow::Cow::Owned(format!("\"{}\"", s.replace('"', "\"\"")))
-    } else {
-        std::borrow::Cow::Borrowed(s)
-    }
-}
-
-/// Minimal RFC 4180 CSV line splitter.
-fn split_csv_line(line: &str) -> Vec<String> {
-    let mut fields = Vec::with_capacity(6);
-    let mut field = String::new();
-    let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        match c {
-            '"' if in_quotes => {
-                if chars.peek() == Some(&'"') {
-                    chars.next();
-                    field.push('"');
-                } else {
-                    in_quotes = false;
-                }
-            }
-            '"' => in_quotes = true,
-            ',' if !in_quotes => {
-                fields.push(field.clone());
-                field.clear();
-            }
-            other => field.push(other),
-        }
-    }
-    fields.push(field);
-    fields
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -583,7 +539,7 @@ mod tests {
         let rows = vec![
             row("alice", "a/a", "PushEvent", 1),
             row("github-actions[bot]", "a/a", "PushEvent", 1),
-            row("Renovate-App", "a/a", "PullRequestEvent", 1),  // case-insensitive
+            row("Renovate-App", "a/a", "PullRequestEvent", 1), // case-insensitive
             row("snyk-io", "a/a", "PushEvent", 1),
             row("netlify[bot]", "a/a", "PushEvent", 1),
         ];
@@ -597,8 +553,8 @@ mod tests {
     fn test_filter_single_event_repos() {
         let rows = vec![
             row("alice", "active/repo", "PushEvent", 3),
-            row("bob", "active/repo", "PushEvent", 1),   // total=4, kept
-            row("carol", "quiet/repo", "PushEvent", 1),  // total=1, dropped
+            row("bob", "active/repo", "PushEvent", 1), // total=4, kept
+            row("carol", "quiet/repo", "PushEvent", 1), // total=1, dropped
         ];
         let result = filter_single_event_repos(rows);
         assert_eq!(repos(&result), vec!["active/repo", "active/repo"]);
@@ -610,9 +566,9 @@ mod tests {
     fn test_filter_empty_repos() {
         let rows = vec![
             row("alice", "code/repo", "PushEvent", 2),
-            row("alice", "code/repo", "IssuesEvent", 1),   // kept: repo has pushes
-            row("bob", "watch/repo", "WatchEvent", 5),     // dropped: no push/PR
-            row("bob", "watch/repo", "IssuesEvent", 1),    // dropped: same repo
+            row("alice", "code/repo", "IssuesEvent", 1), // kept: repo has pushes
+            row("bob", "watch/repo", "WatchEvent", 5),   // dropped: no push/PR
+            row("bob", "watch/repo", "IssuesEvent", 1),  // dropped: same repo
         ];
         let result = filter_empty_repos(rows);
         assert_eq!(repos(&result), vec!["code/repo", "code/repo"]);
@@ -624,8 +580,8 @@ mod tests {
     fn test_filter_high_volume_actors() {
         let rows = vec![
             row("alice", "a/a", "PushEvent", 5),
-            row("alice", "a/b", "PushEvent", 5),   // alice total=10, kept (limit=10)
-            row("bob", "b/a", "PushEvent", 11),     // bob total=11, dropped
+            row("alice", "a/b", "PushEvent", 5), // alice total=10, kept (limit=10)
+            row("bob", "b/a", "PushEvent", 11),  // bob total=11, dropped
         ];
         let result = filter_high_volume_actors(rows, 10);
         assert_eq!(actors(&result), vec!["alice", "alice"]);
@@ -653,10 +609,10 @@ mod tests {
     #[test]
     fn test_filter_fork_only_actors() {
         let rows = vec![
-            row("alice", "a/a", "PushEvent", 1),     // alice has code activity → kept
-            row("alice", "a/a", "ForkEvent", 1),     // kept: alice isn't fork-only
-            row("bob", "b/b", "ForkEvent", 3),        // bob is fork-only → dropped
-            row("carol", "c/c", "WatchEvent", 2),    // carol is watch-only → dropped
+            row("alice", "a/a", "PushEvent", 1), // alice has code activity → kept
+            row("alice", "a/a", "ForkEvent", 1), // kept: alice isn't fork-only
+            row("bob", "b/b", "ForkEvent", 3),   // bob is fork-only → dropped
+            row("carol", "c/c", "WatchEvent", 2), // carol is watch-only → dropped
         ];
         let result = filter_fork_only_actors(rows);
         assert_eq!(actors(&result), vec!["alice", "alice"]);
@@ -667,13 +623,16 @@ mod tests {
     #[test]
     fn test_filter_high_volume_issue_repos() {
         let rows = vec![
-            row("alice", "spam/repo", "IssuesEvent", 200),  // total issues=200 > limit=100
-            row("alice", "spam/repo", "PushEvent", 1),       // push kept even for spam/repo
-            row("bob", "good/repo", "IssuesEvent", 50),      // total issues=50, kept
+            row("alice", "spam/repo", "IssuesEvent", 200), // total issues=200 > limit=100
+            row("alice", "spam/repo", "PushEvent", 1),     // push kept even for spam/repo
+            row("bob", "good/repo", "IssuesEvent", 50),    // total issues=50, kept
         ];
         let result = filter_high_volume_issue_repos(rows, 100);
         assert_eq!(
-            result.iter().map(|r| (r.repo.as_str(), r.event_type.as_str())).collect::<Vec<_>>(),
+            result
+                .iter()
+                .map(|r| (r.repo.as_str(), r.event_type.as_str()))
+                .collect::<Vec<_>>(),
             vec![("spam/repo", "PushEvent"), ("good/repo", "IssuesEvent")]
         );
     }
@@ -683,9 +642,9 @@ mod tests {
     #[test]
     fn test_filter_issue_only_actors() {
         let rows = vec![
-            row("alice", "a/a", "PushEvent", 1),      // alice has code → issue row kept
+            row("alice", "a/a", "PushEvent", 1), // alice has code → issue row kept
             row("alice", "a/a", "IssuesEvent", 2),
-            row("bob", "b/b", "IssuesEvent", 5),       // bob has no code → issue row dropped
+            row("bob", "b/b", "IssuesEvent", 5), // bob has no code → issue row dropped
         ];
         let result = filter_issue_only_actors(rows);
         assert_eq!(
@@ -736,4 +695,3 @@ bob,rust-lang/rust,PushEvent,,,2
         Ok(())
     }
 }
-

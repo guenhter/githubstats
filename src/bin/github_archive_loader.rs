@@ -21,7 +21,8 @@
 //!                             `Vec<AggregatedEvent>` keyed by
 //!                             (actor, repo, event_type, action).
 //!
-//!   write_csv               — writes `Vec<AggregatedEvent>` as RFC 4180 CSV.
+//!   write_csv               — writes `Vec<AggregatedEvent>` as RFC 4180 CSV
+//!                             using the `csv` crate.
 //!
 //! Usage:
 //!   github-archive-loader --year 2026 --month 1 --parallelism 10 --output events.csv
@@ -67,7 +68,7 @@ use flate2::read::GzDecoder;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -429,21 +430,21 @@ async fn aggregate_events(mut rx: mpsc::Receiver<RawEvent>) -> Result<Vec<Aggreg
 ///   someuser,owner/name,PullRequestEvent,closed,Rust,42
 fn write_csv(rows: Vec<AggregatedEvent>, path: &PathBuf) -> Result<()> {
     let file = File::create(path).with_context(|| format!("create {path:?}"))?;
-    let mut w = BufWriter::new(file);
-    w.write_all(b"actor,repo,event_type,action,language,count\n")
+    let mut w = csv::WriterBuilder::new()
+        .terminator(csv::Terminator::Any(b'\n'))
+        .from_writer(file);
+    w.write_record(["actor", "repo", "event_type", "action", "language", "count"])
         .context("write CSV header")?;
 
     for row in &rows {
-        let actor = csv_field(&row.actor);
-        let repo = csv_field(&row.repo);
-        let etype = csv_field(&row.event_type);
-        let action = csv_field(&row.action);
-        let language = csv_field(&row.language);
-        writeln!(
-            w,
-            "{actor},{repo},{etype},{action},{language},{}",
-            row.count
-        )
+        w.write_record([
+            &row.actor,
+            &row.repo,
+            &row.event_type,
+            &row.action,
+            &row.language,
+            &row.count.to_string(),
+        ])
         .context("write CSV row")?;
     }
 
@@ -575,15 +576,4 @@ fn extract_event(value: &Value) -> Option<RawEvent> {
         action,
         language,
     })
-}
-
-// ── CSV helpers ───────────────────────────────────────────────────────────────
-
-/// Quotes a CSV field if it contains a comma, double-quote, or newline.
-fn csv_field(s: &str) -> std::borrow::Cow<'_, str> {
-    if s.contains([',', '"', '\n', '\r']) {
-        std::borrow::Cow::Owned(format!("\"{}\"", s.replace('"', "\"\"")))
-    } else {
-        std::borrow::Cow::Borrowed(s)
-    }
 }

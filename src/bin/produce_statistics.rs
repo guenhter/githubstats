@@ -376,7 +376,8 @@ fn load_languages(path: &PathBuf) -> Result<LangMap> {
 /// CSV format (first row is header):
 ///   actor,repo,event_type,action,language,count
 fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
-    let reader = open(path)?;
+    let file = File::open(path).with_context(|| format!("cannot open {path:?}"))?;
+    let mut rdr = csv::Reader::from_reader(file);
 
     let mut pr_counts: HashMap<String, u64> = HashMap::new();
     let mut dev_actor_sets: HashMap<String, HashSet<String>> = HashMap::new();
@@ -386,36 +387,33 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
     let mut star_counts: HashMap<String, u64> = HashMap::new();
     let mut parse_errors = 0u64;
 
-    for (i, line) in reader.lines().enumerate() {
-        let line = line.context("read error")?;
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        // Skip header row.
-        if i == 0 && line.starts_with("actor,") {
-            continue;
-        }
-
-        let fields: Vec<&str> = line.splitn(6, ',').collect();
-        if fields.len() < 6 {
+    for (i, result) in rdr.records().enumerate() {
+        let record = match result {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("  [skip] CSV record {}: {e}", i + 2);
+                parse_errors += 1;
+                continue;
+            }
+        };
+        if record.len() < 6 {
             eprintln!(
-                "  [skip] CSV line {}: expected 6 fields, got {}",
-                i + 1,
-                fields.len()
+                "  [skip] CSV record {}: expected 6 fields, got {}",
+                i + 2,
+                record.len()
             );
             parse_errors += 1;
             continue;
         }
-        let actor = fields[0].trim_matches('"');
-        let repo = fields[1].trim_matches('"');
-        let event_type = fields[2].trim_matches('"');
-        let count_str = fields[5].trim_matches('"');
+        let actor = &record[0];
+        let repo = &record[1];
+        let event_type = &record[2];
+        let count_str = &record[5];
 
         let count: u64 = match count_str.parse() {
             Ok(v) => v,
             Err(_) => {
-                eprintln!("  [skip] non-numeric count on CSV line {}", i + 1);
+                eprintln!("  [skip] non-numeric count on CSV record {}", i + 2);
                 parse_errors += 1;
                 continue;
             }
@@ -601,9 +599,7 @@ carol,golang/go,WatchEvent,,,10
         // golang/go: carol (push) = 1 dev → Go 1.0.
         // Total = 3.0 → Rust 60.0%, Go 33.33%, C 6.67%
         assert_eq!(
-            std::fs::read_to_string(
-                dir.join("language-ratings-2024-01-developer-activity.jsonl")
-            )?,
+            std::fs::read_to_string(dir.join("language-ratings-2024-01-developer-activity.jsonl"))?,
             r#"{"language":"Rust","rating":1.8,"percentage":60.0}
 {"language":"Go","rating":1.0,"percentage":33.33}
 {"language":"C","rating":0.2,"percentage":6.67}
@@ -633,4 +629,3 @@ carol,golang/go,WatchEvent,,,10
         Ok(())
     }
 }
-
