@@ -81,7 +81,7 @@ awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' \
       --workers 10 \
   > "data/languages-${YEAR}-${MONTH}.jsonl"
 
-# Step 4 — compute weighted per-language ratings (six output files)
+# Step 4 — compute weighted per-language ratings (one output file per statistic type)
 cargo run --release --bin produce_statistics -- \
   --archive "data/archive-${YEAR}${MONTH}-filtered.csv" \
   --languages "data/languages-${YEAR}-${MONTH}.jsonl" \
@@ -98,7 +98,7 @@ done
 
 ### Rating files
 
-`produce_statistics` writes six JSONL files, all sorted descending by rating:
+`produce_statistics` writes multiple JSONL files, all sorted descending by rating:
 
 | File | Signal | Formula |
 |---|---|---|
