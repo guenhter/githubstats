@@ -750,10 +750,13 @@ function renderChart(months, byMonth, languages) {
     name: lang,
     type: 'line',
     smooth: true,
-    symbol: 'none',
-    lineStyle: { width: 1.5 },
-    emphasis: { focus: 'self', lineStyle: { width: 3 } },
+    symbol: 'circle',
+    symbolSize: 10,
+    showSymbol: true,
+    itemStyle: { opacity: 0 },
+    emphasis: { itemStyle: { opacity: 1 }, focus: 'series', lineStyle: { width: 3 } },
     blur: { lineStyle: { opacity: 0.15 } },
+    lineStyle: { width: 1.5 },
     data: months.map(m => {
       const v = byMonth.get(m)?.get(lang);
       return v != null ? +v.toFixed(2) : null;
@@ -780,22 +783,12 @@ function renderChart(months, byMonth, languages) {
     animation: false,
     grid,
     tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'line' },
-      triggerEmphasis: false,
+      trigger: 'item',
       backgroundColor: '#1c2128',
       borderColor: '#30363d',
       textStyle: { color: '#e6edf3', fontSize: 12 },
-      formatter(params) {
-        const month = params[0].axisValue;
-        const limit = mobile ? 5 : 10;
-        const rows = params
-          .filter(p => p.value != null)
-          .sort((a, b) => b.value - a.value)
-          .slice(0, limit)
-          .map(p => `<span style="color:${p.color}">●</span> ${p.seriesName}: <b>${p.value}%</b>`)
-          .join('<br>');
-        return `<b>${month}</b><br>${rows}`;
+      formatter(p) {
+        return `<b>${p.axisValue ?? p.name}</b><br><span style="color:${p.color}">●</span> ${p.seriesName}: <b>${p.value}%</b>`;
       },
     },
     legend: {
