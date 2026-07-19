@@ -1,7 +1,7 @@
 //! produce-statistics
 //!
 //! Joins an archive CSV file (output of `github_archive_loader` / `filter_archive`)
-//! with a projects-languages JSONL file and produces six language-rating files
+//! with a projects-languages JSONL file and produces multiple language-rating files
 //! in the specified output directory.
 //!
 //! Output files (JSONL, sorted descending by rating):
@@ -15,7 +15,7 @@
 //! With --primary-only the filenames gain a "-primary" suffix:
 //!   language-ratings-YYYY-MM-pr-count-primary.jsonl  (etc.)
 //!
-//! Rating formula (all six types):
+//! Rating formula (all metric types):
 //!
 //!   Default (proportional):
 //!     For each repo, distribute the event count across all its languages
@@ -78,7 +78,7 @@ type LangMap = HashMap<String, (u64, Vec<(String, u64)>)>;
 #[command(
     name = "produce-statistics",
     about = "Compute weighted language ratings from an archive CSV and language breakdowns.\n\
-             Produces six JSONL files in --output-dir, one per statistic type."
+             Produces multiple JSONL files in --output-dir, one per statistic type."
 )]
 struct Args {
     /// Archive CSV file produced by github_archive_loader / filter_archive.
@@ -92,7 +92,7 @@ struct Args {
     #[arg(long)]
     languages: PathBuf,
 
-    /// Directory where the six output JSONL files will be written.
+    /// Directory where the output JSONL files will be written.
     /// Files are named: language-ratings-YYYY-MM-<type>.jsonl
     #[arg(long)]
     output_dir: PathBuf,
@@ -513,7 +513,11 @@ fn compute_ratings(
     eprintln!("  [{label}] {matched} repos matched, {unmatched} had no language data");
 
     let mut sorted: Vec<(String, f64)> = ratings.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
     sorted
 }
 
