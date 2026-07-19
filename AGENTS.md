@@ -6,7 +6,7 @@
 
 **githubstats** is a data pipeline and interactive visualization for GitHub programming language popularity, derived from real developer activity on [GH Archive](https://www.gharchive.org/).
 
-The pipeline downloads every public GitHub event for a given month, filters out bots and automated noise, resolves language compositions per repository, and computes five weighted language activity ratings. The results are consumed by a single-page web UI (`index.html`) that renders an interactive trend chart (via Apache ECharts) and a ranked table with sparklines.
+The pipeline downloads every public GitHub event for a given month, filters out bots and automated noise, resolves language compositions per repository, and computes multiple weighted language activity ratings. The results are consumed by a single-page web UI (`index.html`) that renders an interactive trend chart (via Apache ECharts) and a ranked table with sparklines.
 
 The project covers January 2015 through the present (~11 years of monthly data). A key data discontinuity exists: GitHub removed language data from event payloads in October 2025. Before that date, language attribution uses the single primary language field; from October 2025 onward, the GraphQL API is required for full multi-language breakdown.
 
@@ -55,7 +55,7 @@ githubstats/
 | Per-month rating (committed) | `data/language-ratings-YYYY-MM-<type>.jsonl` |
 | Combined all-months rating (committed) | `data/language-ratings-all-<type>.jsonl` |
 
-**Valid `<type>` values:** `pr-count`, `issue-count`, `push-count`, `developer-activity`, `active-repos`
+**Valid `<type>` values:** `pr-count`, `issue-count`, `push-count`, `developer-activity`, `active-repos`, `star-count`
 
 ### Build and Run Commands
 

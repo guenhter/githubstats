@@ -504,6 +504,7 @@
       <option value="push-count">Push count</option>
       <option value="issue-count">Issue count</option>
       <option value="active-repos">Active repos</option>
+      <option value="star-count">Star count</option>
     </select>
 
     <span id="metricDesc" class="metric-desc"></span>
@@ -625,6 +626,7 @@ const METRIC_DESC = {
   'push-count':         'Total push events per language per month.',
   'issue-count':        'Total issue actions per language per month.',
   'active-repos':       'Distinct active repos per language — each repo counts once regardless of event volume.',
+  'star-count':         'Total WatchEvents (stars) per language per month.',
 };
 
 // ── ECharts init ─────────────────────────────────────────────────────────────
@@ -674,6 +676,8 @@ async function loadAndRender(type) {
     renderAll(records);
   } catch (err) {
     console.error(err);
+    window._parsedData = null;
+    clearAll();
   } finally {
     showOverlay(false);
   }
@@ -1010,6 +1014,19 @@ function escAttr(s) {
 }
 function showOverlay(on) {
   document.getElementById('overlay').classList.toggle('hidden', !on);
+}
+
+function clearAll() {
+  // Clear the ECharts canvas
+  chart.clear();
+  // Clear the custom HTML legend
+  document.getElementById('legend-items').innerHTML = '';
+  // Clear the month picker
+  document.getElementById('asOf').innerHTML = '';
+  // Clear the table
+  document.getElementById('tableBody').innerHTML = '';
+  document.getElementById('tableTitle').textContent = 'Top 100 languages';
+  document.getElementById('tableCaption').textContent = '';
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
