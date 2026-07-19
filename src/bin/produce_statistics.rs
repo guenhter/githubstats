@@ -139,8 +139,10 @@ struct RepoCounts {
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    run(Args::parse())
+}
 
+fn run(args: Args) -> Result<()> {
     // Infer YYYY-MM from the archive filename.
     let year_month = infer_year_month(&args.archive)?;
     eprintln!("Inferred period: {year_month}");
@@ -316,7 +318,7 @@ fn open_writer(path: &PathBuf) -> Result<BufWriter<File>> {
 
 /// Write a sorted-descending list of (language, rating) pairs as JSONL.
 /// Each record includes the rating and its percentage share of the total.
-fn write_ratings(w: &mut BufWriter<File>, ratings: &[(String, f64)]) -> Result<()> {
+fn write_ratings(w: &mut impl Write, ratings: &[(String, f64)]) -> Result<()> {
     let total: f64 = ratings.iter().map(|(_, r)| r).sum();
     for (language, rating) in ratings {
         let rating = (rating * 100.0).round() / 100.0;
@@ -526,3 +528,109 @@ fn open(path: &PathBuf) -> Result<BufReader<File>> {
         .with_context(|| format!("cannot open {:?}", path))
         .map(BufReader::new)
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_produce_statistics() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dir = tmp.path();
+
+        // Two repos: rust-lang/rust (Rust-heavy) and golang/go (Go-only).
+        std::fs::write(
+            dir.join("archive-202401-filtered.csv"),
+            r#"actor,repo,event_type,action,language,count
+alice,rust-lang/rust,PullRequestEvent,opened,,3
+bob,rust-lang/rust,PushEvent,,,5
+alice,rust-lang/rust,IssuesEvent,opened,,2
+carol,golang/go,PushEvent,,,4
+carol,golang/go,WatchEvent,,,10
+"#,
+        )?;
+
+        // rust-lang/rust: 90% Rust, 10% C.  golang/go: 100% Go.
+        std::fs::write(
+            dir.join("languages-2024-01.jsonl"),
+            r#"{"repo":"rust-lang/rust","total_size":1000,"languages":[{"language":"Rust","size":900},{"language":"C","size":100}]}
+{"repo":"golang/go","total_size":500,"languages":[{"language":"Go","size":500}]}
+"#,
+        )?;
+
+        run(Args {
+            archive: dir.join("archive-202401-filtered.csv"),
+            languages: dir.join("languages-2024-01.jsonl"),
+            output_dir: dir.to_path_buf(),
+            primary_only: false,
+        })?;
+
+        // ── pr-count ─────────────────────────────────────────────────────────
+        // Only rust-lang/rust had PRs (count=3). Rust gets 90%, C gets 10%.
+        assert_eq!(
+            std::fs::read_to_string(dir.join("language-ratings-2024-01-pr-count.jsonl"))?,
+            r#"{"language":"Rust","rating":2.7,"percentage":90.0}
+{"language":"C","rating":0.3,"percentage":10.0}
+"#
+        );
+
+        // ── push-count ───────────────────────────────────────────────────────
+        // rust-lang/rust: 5 pushes → Rust 4.5, C 0.5.  golang/go: 4 pushes → Go 4.0.
+        // Total = 9.0 → Rust 50.0%, Go 44.44%, C 5.56%
+        assert_eq!(
+            std::fs::read_to_string(dir.join("language-ratings-2024-01-push-count.jsonl"))?,
+            r#"{"language":"Rust","rating":4.5,"percentage":50.0}
+{"language":"Go","rating":4.0,"percentage":44.44}
+{"language":"C","rating":0.5,"percentage":5.56}
+"#
+        );
+
+        // ── issue-count ──────────────────────────────────────────────────────
+        // Only rust-lang/rust had issues (count=2). Rust 90%, C 10%.
+        assert_eq!(
+            std::fs::read_to_string(dir.join("language-ratings-2024-01-issue-count.jsonl"))?,
+            r#"{"language":"Rust","rating":1.8,"percentage":90.0}
+{"language":"C","rating":0.2,"percentage":10.0}
+"#
+        );
+
+        // ── developer-activity ───────────────────────────────────────────────
+        // rust-lang/rust: alice (PR) + bob (push) = 2 distinct devs → Rust 1.8, C 0.2.
+        // golang/go: carol (push) = 1 dev → Go 1.0.
+        // Total = 3.0 → Rust 60.0%, Go 33.33%, C 6.67%
+        assert_eq!(
+            std::fs::read_to_string(
+                dir.join("language-ratings-2024-01-developer-activity.jsonl")
+            )?,
+            r#"{"language":"Rust","rating":1.8,"percentage":60.0}
+{"language":"Go","rating":1.0,"percentage":33.33}
+{"language":"C","rating":0.2,"percentage":6.67}
+"#
+        );
+
+        // ── active-repos ─────────────────────────────────────────────────────
+        // Both repos are active (each counts as 1).
+        // rust-lang/rust → Rust 0.9, C 0.1.  golang/go → Go 1.0.
+        // Total = 2.0 → Go 50.0%, Rust 45.0%, C 5.0%
+        assert_eq!(
+            std::fs::read_to_string(dir.join("language-ratings-2024-01-active-repos.jsonl"))?,
+            r#"{"language":"Go","rating":1.0,"percentage":50.0}
+{"language":"Rust","rating":0.9,"percentage":45.0}
+{"language":"C","rating":0.1,"percentage":5.0}
+"#
+        );
+
+        // ── star-count ───────────────────────────────────────────────────────
+        // golang/go had 10 WatchEvents → Go 10.0.
+        assert_eq!(
+            std::fs::read_to_string(dir.join("language-ratings-2024-01-star-count.jsonl"))?,
+            r#"{"language":"Go","rating":10.0,"percentage":100.0}
+"#
+        );
+
+        Ok(())
+    }
+}
+
