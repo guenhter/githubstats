@@ -131,3 +131,7 @@ If port 8080 is already in use, try 8081, 8082, etc.
 
 <!-- This section is maintained by the repository owner. -->
 <!-- Add your personal preferences, style rules, and agent behavior guidelines here. -->
+
+### Git Policy
+
+Never run `git commit`, `git push`, or create pull requests unless the user explicitly requests it. Always leave changes staged or unstaged for the user to review before committing.
