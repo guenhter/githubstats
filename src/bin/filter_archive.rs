@@ -63,8 +63,10 @@ struct Row {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    run(Args::parse())
+}
 
+fn run(args: Args) -> Result<()> {
     let rows = read_csv(&args.input)?;
     let total = rows.len();
     eprintln!("  [read]                         {:>8} rows", total);
@@ -532,3 +534,206 @@ fn split_csv_line(line: &str) -> Vec<String> {
     fields.push(field);
     fields
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    fn row(actor: &str, repo: &str, event_type: &str, count: u64) -> Row {
+        Row {
+            actor: actor.to_string(),
+            repo: repo.to_string(),
+            event_type: event_type.to_string(),
+            action: String::new(),
+            language: String::new(),
+            count,
+        }
+    }
+
+    fn actors(rows: &[Row]) -> Vec<&str> {
+        rows.iter().map(|r| r.actor.as_str()).collect()
+    }
+
+    fn repos(rows: &[Row]) -> Vec<&str> {
+        rows.iter().map(|r| r.repo.as_str()).collect()
+    }
+
+    // ── filter_bots ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_filter_bots() {
+        let rows = vec![
+            row("alice", "a/a", "PushEvent", 1),
+            row("dependabot[bot]", "a/a", "PullRequestEvent", 1),
+            row("MyProjectBot", "a/a", "PushEvent", 1),
+            row("BOT-ci", "a/a", "PushEvent", 1),
+        ];
+        let result = filter_bots(rows);
+        assert_eq!(actors(&result), vec!["alice"]);
+    }
+
+    // ── filter_ci_actors ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_filter_ci_actors() {
+        let rows = vec![
+            row("alice", "a/a", "PushEvent", 1),
+            row("github-actions[bot]", "a/a", "PushEvent", 1),
+            row("Renovate-App", "a/a", "PullRequestEvent", 1),  // case-insensitive
+            row("snyk-io", "a/a", "PushEvent", 1),
+            row("netlify[bot]", "a/a", "PushEvent", 1),
+        ];
+        let result = filter_ci_actors(rows);
+        assert_eq!(actors(&result), vec!["alice"]);
+    }
+
+    // ── filter_single_event_repos ─────────────────────────────────────────────
+
+    #[test]
+    fn test_filter_single_event_repos() {
+        let rows = vec![
+            row("alice", "active/repo", "PushEvent", 3),
+            row("bob", "active/repo", "PushEvent", 1),   // total=4, kept
+            row("carol", "quiet/repo", "PushEvent", 1),  // total=1, dropped
+        ];
+        let result = filter_single_event_repos(rows);
+        assert_eq!(repos(&result), vec!["active/repo", "active/repo"]);
+    }
+
+    // ── filter_empty_repos ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_filter_empty_repos() {
+        let rows = vec![
+            row("alice", "code/repo", "PushEvent", 2),
+            row("alice", "code/repo", "IssuesEvent", 1),   // kept: repo has pushes
+            row("bob", "watch/repo", "WatchEvent", 5),     // dropped: no push/PR
+            row("bob", "watch/repo", "IssuesEvent", 1),    // dropped: same repo
+        ];
+        let result = filter_empty_repos(rows);
+        assert_eq!(repos(&result), vec!["code/repo", "code/repo"]);
+    }
+
+    // ── filter_high_volume_actors ─────────────────────────────────────────────
+
+    #[test]
+    fn test_filter_high_volume_actors() {
+        let rows = vec![
+            row("alice", "a/a", "PushEvent", 5),
+            row("alice", "a/b", "PushEvent", 5),   // alice total=10, kept (limit=10)
+            row("bob", "b/a", "PushEvent", 11),     // bob total=11, dropped
+        ];
+        let result = filter_high_volume_actors(rows, 10);
+        assert_eq!(actors(&result), vec!["alice", "alice"]);
+    }
+
+    // ── filter_deleted_repos ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_filter_deleted_repos() {
+        let sha = "a".repeat(40);
+        let uuid = "550e8400-e29b-41d4-a716-446655440000";
+        let rows = vec![
+            row("alice", "normal/repo", "PushEvent", 1),
+            row("alice", &format!("{sha}/repo"), "PushEvent", 1),
+            row("alice", &format!("owner/{sha}"), "PushEvent", 1),
+            row("alice", &format!("{uuid}/repo"), "PushEvent", 1),
+            row("alice", &format!("owner/{uuid}"), "PushEvent", 1),
+        ];
+        let result = filter_deleted_repos(rows);
+        assert_eq!(repos(&result), vec!["normal/repo"]);
+    }
+
+    // ── filter_fork_only_actors ───────────────────────────────────────────────
+
+    #[test]
+    fn test_filter_fork_only_actors() {
+        let rows = vec![
+            row("alice", "a/a", "PushEvent", 1),     // alice has code activity → kept
+            row("alice", "a/a", "ForkEvent", 1),     // kept: alice isn't fork-only
+            row("bob", "b/b", "ForkEvent", 3),        // bob is fork-only → dropped
+            row("carol", "c/c", "WatchEvent", 2),    // carol is watch-only → dropped
+        ];
+        let result = filter_fork_only_actors(rows);
+        assert_eq!(actors(&result), vec!["alice", "alice"]);
+    }
+
+    // ── filter_high_volume_issue_repos ────────────────────────────────────────
+
+    #[test]
+    fn test_filter_high_volume_issue_repos() {
+        let rows = vec![
+            row("alice", "spam/repo", "IssuesEvent", 200),  // total issues=200 > limit=100
+            row("alice", "spam/repo", "PushEvent", 1),       // push kept even for spam/repo
+            row("bob", "good/repo", "IssuesEvent", 50),      // total issues=50, kept
+        ];
+        let result = filter_high_volume_issue_repos(rows, 100);
+        assert_eq!(
+            result.iter().map(|r| (r.repo.as_str(), r.event_type.as_str())).collect::<Vec<_>>(),
+            vec![("spam/repo", "PushEvent"), ("good/repo", "IssuesEvent")]
+        );
+    }
+
+    // ── filter_issue_only_actors ──────────────────────────────────────────────
+
+    #[test]
+    fn test_filter_issue_only_actors() {
+        let rows = vec![
+            row("alice", "a/a", "PushEvent", 1),      // alice has code → issue row kept
+            row("alice", "a/a", "IssuesEvent", 2),
+            row("bob", "b/b", "IssuesEvent", 5),       // bob has no code → issue row dropped
+        ];
+        let result = filter_issue_only_actors(rows);
+        assert_eq!(
+            result.iter().map(|r| r.actor.as_str()).collect::<Vec<_>>(),
+            vec!["alice", "alice"]
+        );
+    }
+
+    // ── end-to-end via run() ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_filter_archive_end_to_end() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dir = tmp.path();
+
+        std::fs::write(
+            dir.join("archive-202401.csv"),
+            r#"actor,repo,event_type,action,language,count
+alice,rust-lang/rust,PushEvent,,,5
+alice,rust-lang/rust,PullRequestEvent,opened,,3
+alice,rust-lang/rust,IssuesEvent,opened,,2
+bob,rust-lang/rust,PushEvent,,,2
+dependabot[bot],some/repo,PullRequestEvent,opened,,1
+carol,single-event/repo,PushEvent,,,1
+dave,golang/go,WatchEvent,,,10
+eve,spam/repo,IssuesEvent,opened,,20000
+eve,spam/repo,PushEvent,,,1
+"#,
+        )?;
+
+        run(Args {
+            input: dir.join("archive-202401.csv"),
+            output: dir.join("archive-202401-filtered.csv"),
+            actor_event_limit: 1_000,
+            repo_issue_limit: 10_000,
+        })?;
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("archive-202401-filtered.csv"))?,
+            r#"actor,repo,event_type,action,language,count
+alice,rust-lang/rust,PushEvent,,,5
+alice,rust-lang/rust,PullRequestEvent,opened,,3
+alice,rust-lang/rust,IssuesEvent,opened,,2
+bob,rust-lang/rust,PushEvent,,,2
+"#
+        );
+
+        Ok(())
+    }
+}
+
