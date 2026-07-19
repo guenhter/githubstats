@@ -12,34 +12,17 @@
 //!   language-ratings-YYYY-MM-active-repos.jsonl
 //!   language-ratings-YYYY-MM-star-count.jsonl
 //!
-//! With --primary-only the filenames gain a "-primary" suffix:
-//!   language-ratings-YYYY-MM-pr-count-primary.jsonl  (etc.)
-//!
 //! Rating formula (all metric types):
-//!
-//!   Default (proportional):
-//!     For each repo, distribute the event count across all its languages
-//!     weighted by byte share.
-//!     pr-count:           rating[L] += pr_count            × (size_L / total_size)
-//!     issue-count:        rating[L] += issue_count         × (size_L / total_size)
-//!     push-count:         rating[L] += push_count          × (size_L / total_size)
-//!     developer-activity: rating[L] += distinct_contributors × (size_L / total_size)
-//!                         (distinct actors across PullRequestEvent + PushEvent)
-//!     active-repos:       rating[L] += 1                   × (size_L / total_size)
-//!                         (once per repo that had any PushEvent or PullRequestEvent)
-//!     star-count:         rating[L] += star_count           × (size_L / total_size)
-//!
-//!   --primary-only (experimental):
-//!     All credit goes to the single dominant (largest-by-bytes) language;
-//!     secondary languages are ignored.  Score multiplier is always 1, not the
-//!     fractional byte share.
-//!     pr-count:           rating[primary] += pr_count
-//!     issue-count:        rating[primary] += issue_count
-//!     push-count:         rating[primary] += push_count
-//!     developer-activity: rating[primary] += distinct_contributors
-//!                         (distinct actors across PullRequestEvent + PushEvent)
-//!     active-repos:       rating[primary] += 1
-//!     star-count:         rating[primary] += star_count
+//!   For each repo, distribute the event count across all its languages
+//!   weighted by byte share.
+//!   pr-count:           rating[L] += pr_count            × (size_L / total_size)
+//!   issue-count:        rating[L] += issue_count         × (size_L / total_size)
+//!   push-count:         rating[L] += push_count          × (size_L / total_size)
+//!   developer-activity: rating[L] += distinct_contributors × (size_L / total_size)
+//!                       (distinct actors across PullRequestEvent + PushEvent)
+//!   active-repos:       rating[L] += 1                   × (size_L / total_size)
+//!                       (once per repo that had any PushEvent or PullRequestEvent)
+//!   star-count:         rating[L] += star_count           × (size_L / total_size)
 //!
 //! Event types read from the archive CSV:
 //!   PullRequestEvent → pr-count, developer-activity, and active-repos
@@ -96,13 +79,6 @@ struct Args {
     /// Files are named: language-ratings-YYYY-MM-<type>.jsonl
     #[arg(long)]
     output_dir: PathBuf,
-
-    /// Experimental: attribute all of a repo's score to its primary (largest)
-    /// language only, with a weight of 1 instead of the fractional byte share.
-    /// Secondary languages are ignored entirely.
-    /// Output filenames gain a "-primary" suffix.
-    #[arg(long, default_value_t = false)]
-    primary_only: bool,
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -167,49 +143,34 @@ fn run(args: Args) -> Result<()> {
     );
 
     // ── pr-count ─────────────────────────────────────────────────────────────
-    let out = output_path(&args.output_dir, &year_month, "pr-count", args.primary_only);
+    let out = output_path(&args.output_dir, &year_month, "pr-count");
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
-        let ratings = compute_ratings(&counts.pr_counts, &lang_map, "PR", args.primary_only);
+        let ratings = compute_ratings(&counts.pr_counts, &lang_map, "PR");
         write_ratings(&mut w, &ratings)?;
     }
 
     // ── issue-count ──────────────────────────────────────────────────────────
-    let out = output_path(
-        &args.output_dir,
-        &year_month,
-        "issue-count",
-        args.primary_only,
-    );
+    let out = output_path(&args.output_dir, &year_month, "issue-count");
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
-        let ratings = compute_ratings(&counts.issue_counts, &lang_map, "issue", args.primary_only);
+        let ratings = compute_ratings(&counts.issue_counts, &lang_map, "issue");
         write_ratings(&mut w, &ratings)?;
     }
 
     // ── push-count ───────────────────────────────────────────────────────────
-    let out = output_path(
-        &args.output_dir,
-        &year_month,
-        "push-count",
-        args.primary_only,
-    );
+    let out = output_path(&args.output_dir, &year_month, "push-count");
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
-        let ratings = compute_ratings(&counts.push_counts, &lang_map, "push", args.primary_only);
+        let ratings = compute_ratings(&counts.push_counts, &lang_map, "push");
         write_ratings(&mut w, &ratings)?;
     }
 
     // ── developer-activity ───────────────────────────────────────────────────
-    let out = output_path(
-        &args.output_dir,
-        &year_month,
-        "developer-activity",
-        args.primary_only,
-    );
+    let out = output_path(&args.output_dir, &year_month, "developer-activity");
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
@@ -219,50 +180,25 @@ fn run(args: Args) -> Result<()> {
             .iter()
             .map(|(repo, n)| (repo.clone(), *n as u64))
             .collect();
-        let ratings = compute_ratings(
-            &dev_counts,
-            &lang_map,
-            "developer-activity",
-            args.primary_only,
-        );
+        let ratings = compute_ratings(&dev_counts, &lang_map, "developer-activity");
         write_ratings(&mut w, &ratings)?;
     }
 
     // ── active-repos ─────────────────────────────────────────────────────────
-    let out = output_path(
-        &args.output_dir,
-        &year_month,
-        "active-repos",
-        args.primary_only,
-    );
+    let out = output_path(&args.output_dir, &year_month, "active-repos");
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
-        let ratings = compute_ratings(
-            &counts.active_repos,
-            &lang_map,
-            "active-repos",
-            args.primary_only,
-        );
+        let ratings = compute_ratings(&counts.active_repos, &lang_map, "active-repos");
         write_ratings(&mut w, &ratings)?;
     }
 
     // ── star-count ───────────────────────────────────────────────────────────
-    let out = output_path(
-        &args.output_dir,
-        &year_month,
-        "star-count",
-        args.primary_only,
-    );
+    let out = output_path(&args.output_dir, &year_month, "star-count");
     eprintln!("Writing {out:?} …");
     {
         let mut w = open_writer(&out)?;
-        let ratings = compute_ratings(
-            &counts.star_counts,
-            &lang_map,
-            "star-count",
-            args.primary_only,
-        );
+        let ratings = compute_ratings(&counts.star_counts, &lang_map, "star-count");
         write_ratings(&mut w, &ratings)?;
     }
 
@@ -298,15 +234,8 @@ fn infer_year_month(path: &PathBuf) -> Result<String> {
 }
 
 /// Build the output file path for a given type.
-/// With `primary_only` the filename gains a "-primary" suffix before ".jsonl".
-fn output_path(dir: &Path, year_month: &str, kind: &str, primary_only: bool) -> PathBuf {
-    if primary_only {
-        dir.join(format!(
-            "language-ratings-{year_month}-{kind}-primary.jsonl"
-        ))
-    } else {
-        dir.join(format!("language-ratings-{year_month}-{kind}.jsonl"))
-    }
+fn output_path(dir: &Path, year_month: &str, kind: &str) -> PathBuf {
+    dir.join(format!("language-ratings-{year_month}-{kind}.jsonl"))
 }
 
 /// Open a file for writing, wrapped in a BufWriter.
@@ -473,16 +402,12 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
 
 /// Compute language ratings from a map of per-repo event counts.
 ///
-/// Default (proportional): distribute each repo's count across all its
-/// languages weighted by byte share.
-///
-/// Primary-only: attribute the full count to the single dominant language;
-/// secondary languages are ignored.
+/// For each repo, distributes the event count across all its languages
+/// weighted by byte share (proportional attribution).
 fn compute_ratings(
     event_counts: &HashMap<String, u64>,
     lang_map: &LangMap,
     label: &str,
-    primary_only: bool,
 ) -> Vec<(String, f64)> {
     let mut ratings: HashMap<String, f64> = HashMap::new();
     let mut matched = 0u64;
@@ -490,12 +415,7 @@ fn compute_ratings(
 
     for (repo, count) in event_counts {
         if let Some((total_size, langs)) = lang_map.get(repo.as_str()) {
-            if primary_only {
-                // All credit to the primary (first = largest) language, weight = 1.
-                if let Some((lang, _)) = langs.first() {
-                    *ratings.entry(lang.clone()).or_insert(0.0) += *count as f64;
-                }
-            } else if *total_size > 0 {
+            if *total_size > 0 {
                 for (lang, size) in langs {
                     let share = *size as f64 / *total_size as f64;
                     *ratings.entry(lang.clone()).or_insert(0.0) += *count as f64 * share;
@@ -562,7 +482,6 @@ carol,golang/go,WatchEvent,,,10
             archive: dir.join("archive-202401-filtered.csv"),
             languages: dir.join("languages-2024-01.jsonl"),
             output_dir: dir.to_path_buf(),
-            primary_only: false,
         })?;
 
         // ── pr-count ─────────────────────────────────────────────────────────
