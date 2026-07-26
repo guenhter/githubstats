@@ -405,7 +405,7 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
 /// For each repo, distributes the event count across all its languages
 /// weighted by byte share (proportional attribution).
 fn compute_ratings(
-    event_counts: &HashMap<String, u64>,
+    repo_event_counts: &HashMap<String, u64>,
     lang_map: &LangMap,
     label: &str,
 ) -> Vec<(String, f64)> {
@@ -413,7 +413,7 @@ fn compute_ratings(
     let mut matched = 0u64;
     let mut unmatched = 0u64;
 
-    for (repo, count) in event_counts {
+    for (repo, count) in repo_event_counts {
         if let Some((total_size, langs)) = lang_map.get(repo.as_str()) {
             if *total_size > 0 {
                 for (lang, size) in langs {
@@ -465,6 +465,7 @@ mod tests {
 alice,rust-lang/rust,PullRequestEvent,opened,,3
 bob,rust-lang/rust,PushEvent,,,5
 alice,rust-lang/rust,IssuesEvent,opened,,2
+alice,golang/go,PushEvent,,,1
 carol,golang/go,PushEvent,,,4
 carol,golang/go,WatchEvent,,,10
 "#,
@@ -494,13 +495,13 @@ carol,golang/go,WatchEvent,,,10
         );
 
         // ── push-count ───────────────────────────────────────────────────────
-        // rust-lang/rust: 5 pushes → Rust 4.5, C 0.5.  golang/go: 4 pushes → Go 4.0.
-        // Total = 9.0 → Rust 50.0%, Go 44.44%, C 5.56%
+        // rust-lang/rust: 5 pushes → Rust 4.5, C 0.5.  golang/go: alice 1 + carol 4 = 5 pushes → Go 5.0.
+        // Total = 10.0 → Go 50.0%, Rust 45.0%, C 5.0%
         assert_eq!(
             std::fs::read_to_string(dir.join("language-ratings-2024-01-push-count.jsonl"))?,
-            r#"{"language":"Rust","rating":4.5,"percentage":50.0}
-{"language":"Go","rating":4.0,"percentage":44.44}
-{"language":"C","rating":0.5,"percentage":5.56}
+            r#"{"language":"Go","rating":5.0,"percentage":50.0}
+{"language":"Rust","rating":4.5,"percentage":45.0}
+{"language":"C","rating":0.5,"percentage":5.0}
 "#
         );
 
@@ -515,13 +516,13 @@ carol,golang/go,WatchEvent,,,10
 
         // ── developer-activity ───────────────────────────────────────────────
         // rust-lang/rust: alice (PR) + bob (push) = 2 distinct devs → Rust 1.8, C 0.2.
-        // golang/go: carol (push) = 1 dev → Go 1.0.
-        // Total = 3.0 → Rust 60.0%, Go 33.33%, C 6.67%
+        // golang/go: alice (push) + carol (push) = 2 distinct devs → Go 2.0.
+        // Total = 4.0 → Go 50.0%, Rust 45.0%, C 5.0%
         assert_eq!(
             std::fs::read_to_string(dir.join("language-ratings-2024-01-developer-activity.jsonl"))?,
-            r#"{"language":"Rust","rating":1.8,"percentage":60.0}
-{"language":"Go","rating":1.0,"percentage":33.33}
-{"language":"C","rating":0.2,"percentage":6.67}
+            r#"{"language":"Go","rating":2.0,"percentage":50.0}
+{"language":"Rust","rating":1.8,"percentage":45.0}
+{"language":"C","rating":0.2,"percentage":5.0}
 "#
         );
 
