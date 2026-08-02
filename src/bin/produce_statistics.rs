@@ -474,8 +474,8 @@ carol,golang/go,WatchEvent,,,10
         // rust-lang/rust: 90% Rust, 10% C.  golang/go: 100% Go.
         std::fs::write(
             dir.join("languages-2024-01.jsonl"),
-            r#"{"repo":"rust-lang/rust","total_size":1000,"languages":[{"language":"Rust","size":900},{"language":"C","size":100}]}
-{"repo":"golang/go","total_size":500,"languages":[{"language":"Go","size":500}]}
+            r#"{"repo":"rust-lang/rust","total_size":1000,"languages":[{"language":"Rust","size":900},{"language":"C","size":100}],"fetched_at":"2026-01-15T10:30:00Z"}
+{"repo":"golang/go","total_size":500,"languages":[{"language":"Go","size":500}],"fetched_at":"2026-01-15T10:30:00Z"}
 "#,
         )?;
 

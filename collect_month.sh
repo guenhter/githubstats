@@ -87,9 +87,9 @@ if [[ "$PENDING_COUNT" -eq 0 ]]; then
 else
   echo "[$(date -Iseconds)] Step 2 — fetching $PENDING_COUNT repos for ${YEAR}-${MONTH}"
   # awk/sort run on the host; their output is piped into the container via stdin.
+  # Inter-request pacing is handled internally by the loader (adaptive cooldown).
   cat "$PENDING" \
     | "${DOCKER_RUN[@]}" github_language_loader -- \
-        --wait-ms 100 \
     >> "$LANGUAGES_OUT"
   echo "[$(date -Iseconds)] Step 2 done → $LANGUAGES_OUT"
 fi

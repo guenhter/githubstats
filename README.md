@@ -26,7 +26,7 @@ pack_statistics        →  language-ratings-all-<type>.jsonl  (one per statisti
 |---|---|---|
 | `github_archive_loader` | GH Archive hourly `.json.gz` files (downloaded automatically) | **`archive-YYYYMM.csv`** (CSV)<br>Sample:<br>`actor,repo,event_type,action,language,count`<br>`torvalds,torvalds/linux,PushEvent,,,42`<br>`octocat,octocat/Hello-World,PullRequestEvent,opened,,3` |
 | `filter_archive` | archive CSV | **`archive-YYYYMM-filtered.csv`** (CSV)<br>same format as above, with bots, CI actors, single-event repos, etc. removed |
-| `github_language_loader` | stdin — one `owner/repo` slug per line | **`languages-YYYY-MM.jsonl`** (JSONL)<br>Sample:<br>`{"repo":"torvalds/linux","total_size":1247804,"languages":[{"language":"C","size":1100000},{"language":"Shell","size":80000}]}`<br>`{"repo":"octocat/Hello-World","total_size":1024,"languages":[{"language":"Ruby","size":1024}]}` |
+| `github_language_loader` | stdin — one `owner/repo` slug per line | **`languages-YYYY-MM.jsonl`** (JSONL)<br>Sample:<br>`{"repo":"torvalds/linux","total_size":1247804,"languages":[{"language":"C","size":1100000},{"language":"Shell","size":80000}],"fetched_at":"2026-08-02T17:54:00Z"}`<br>`{"repo":"octocat/Hello-World","total_size":1024,"languages":[{"language":"Ruby","size":1024}],"fetched_at":"2026-08-02T17:54:00Z"}` |
 | `produce_statistics` | filtered archive CSV + languages JSONL | **`language-ratings-YYYY-MM-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"language":"JavaScript","percentage":11.12,"rating":288414.50}` |
 | `pack_statistics` | per-month `language-ratings-YYYY-MM-<type>.jsonl` files | **`language-ratings-all-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"month":"2026-01","language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"month":"2026-01","language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"month":"2026-02","language":"TypeScript","percentage":21.87,"rating":568204.13}` |
 
@@ -78,7 +78,6 @@ export GITHUB_TOKEN=ghp_…
 awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' \
     "data/archive-${YEAR}${MONTH}-filtered.csv" | sort -u \
   | cargo run --release --bin github_language_loader -- \
-      --wait-ms 100 \
   > "data/languages-${YEAR}-${MONTH}.jsonl"
 
 # Step 4 — compute weighted per-language ratings (one output file per statistic type)
