@@ -15,11 +15,11 @@
 //! All progress and diagnostic messages are written to stderr so that stdout
 //! remains a clean JSONL stream safe to pipe or redirect.
 //!
-//! Internal pipeline (fully async via Tokio):
-//!   produce_batches  reads stdin → batch channel
-//!   load_languages   batch channel → worker tasks → result broadcast
-//!   write_results    result broadcast → stdout JSONL
-//!   log_results      result broadcast → stderr progress
+//! Internal pipeline (sequential — one request at a time):
+//!   produce_batches   reads stdin → Vec<Vec<String>>
+//!   download_one      one GraphQL batch request → BatchOutcome
+//!   write + log       write JSONL to stdout, progress to stderr
+//!   sleep             optional cooldown after each request (--wait-ms)
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -29,16 +29,12 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::sync::broadcast;
-use tokio::task::JoinSet;
 
 /// Maximum repositories per GraphQL request.
 const BATCH_SIZE: usize = 100;
 const MAX_RETRIES: u32 = 3;
 const RETRY_WAIT: Duration = Duration::from_secs(5);
 const USER_AGENT: &str = "githubstats/0.1 (https://github.com/guenhter/githubstat)";
-/// Broadcast channel capacity — sized well above the maximum number of in-flight batches.
-const BROADCAST_CAPACITY: usize = 512;
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -52,9 +48,9 @@ struct Args {
     #[arg(long, default_value_t = 5)]
     max_languages: usize,
 
-    /// Number of concurrent language-loader workers
-    #[arg(long, default_value_t = 4)]
-    workers: usize,
+    /// Milliseconds to wait after each GraphQL request (cooldown between requests).
+    #[arg(long, default_value_t = 0)]
+    wait_ms: u64,
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -72,7 +68,7 @@ struct LanguageEntry {
     size: u64,
 }
 
-/// The full output of one completed worker batch, broadcast to writer and logger.
+/// The full output of one completed batch — written to stdout and logged to stderr.
 #[derive(Clone)]
 struct BatchOutcome {
     /// Language results to be written to stdout (includes repos with empty language lists).
@@ -83,7 +79,7 @@ struct BatchOutcome {
     elapsed: Duration,
 }
 
-/// Configuration shared across worker tasks (cheaply cloneable).
+/// Configuration carried through the pipeline (cheaply cloneable).
 #[derive(Clone)]
 struct WorkerConfig {
     client: reqwest::Client,
@@ -108,37 +104,47 @@ async fn main() -> Result<()> {
         max_languages: args.max_languages,
     };
 
-    // Stage 1: read all stdin synchronously before spawning workers so we know
-    // the total batch count up front for progress logging.
+    // Stage 1: read all stdin up front so we know the total batch count for progress logging.
     let batches = produce_batches().await?;
     let total_batches = batches.len();
+    let total_repos = total_batches * BATCH_SIZE; // upper bound; last batch may be smaller
+    let wait = Duration::from_millis(args.wait_ms);
 
-    let (batch_tx, batch_rx) = async_channel::bounded::<Vec<String>>(total_batches.max(1));
+    let mut writer = BufWriter::new(tokio::io::stdout());
+    let mut written: u64 = 0;
+    let mut repos_done: usize = 0;
+    let mut batches_done: usize = 0;
+
     for batch in batches {
-        batch_tx.send(batch).await.context("batch channel send")?;
+        let outcome = download_one(batch, &config).await;
+
+        for entry in &outcome.languages {
+            if entry.languages.is_empty() {
+                continue;
+            }
+            let line = serde_json::to_string(entry).context("serialise")?;
+            writer.write_all(line.as_bytes()).await?;
+            writer.write_all(b"\n").await?;
+            written += 1;
+        }
+
+        repos_done += outcome.languages.len();
+        batches_done += 1;
+        let rl = outcome
+            .rate_limit
+            .map(|(c, r)| format!("  [rate-limit: cost={c}/remaining={r}]"))
+            .unwrap_or_default();
+        eprintln!(
+            "[repos={repos_done} / batch {batches_done}/{total_batches} (~{total_repos} repos)]{rl}  [{}]",
+            outcome.elapsed.human(Truncate::Millis)
+        );
+
+        if !wait.is_zero() {
+            tokio::time::sleep(wait).await;
+        }
     }
-    drop(batch_tx); // channel is fully populated; dropping signals workers to stop when drained
 
-    let (result_tx, _) = broadcast::channel::<BatchOutcome>(BROADCAST_CAPACITY);
-
-    let mut loaders: JoinSet<Result<()>> = JoinSet::new();
-    for _ in 0..args.workers {
-        loaders.spawn(load_languages(
-            batch_rx.clone(),
-            result_tx.clone(),
-            config.clone(),
-        ));
-    }
-    let writer = tokio::spawn(write_results(result_tx.subscribe()));
-    let logger = tokio::spawn(log_results(result_tx.subscribe(), total_batches));
-
-    loaders.join_all().await;
-
-    drop(result_tx); // close broadcast — signals writer and logger to finish
-
-    let written = writer.await??;
-    logger.await?;
-
+    writer.flush().await?;
     eprintln!("\nDone. {written} entries written to stdout");
     Ok(())
 }
@@ -146,7 +152,7 @@ async fn main() -> Result<()> {
 // ── Pipeline stages ───────────────────────────────────────────────────────────
 
 /// Stage 1: read stdin line by line and assemble batches.
-/// Returns all batches so the caller knows the total count before workers start.
+/// Returns all batches so the caller knows the total count before processing starts.
 async fn produce_batches() -> Result<Vec<Vec<String>>> {
     let mut batches: Vec<Vec<String>> = Vec::new();
     let mut buffer: Vec<String> = Vec::with_capacity(BATCH_SIZE);
@@ -170,79 +176,6 @@ async fn produce_batches() -> Result<Vec<Vec<String>>> {
         batches.push(buffer);
     }
     Ok(batches)
-}
-
-/// Stage 2: one of N concurrent workers — pulls batches from the shared MPMC queue,
-/// processes them one at a time, and broadcasts each BatchOutcome.
-/// The worker exits when the channel is closed and drained.
-async fn load_languages(
-    batch_rx: async_channel::Receiver<Vec<String>>,
-    result_tx: broadcast::Sender<BatchOutcome>,
-    config: WorkerConfig,
-) -> Result<()> {
-    while let Ok(batch) = batch_rx.recv().await {
-        let outcome = download_one(batch, &config).await;
-        let _ = result_tx.send(outcome);
-    }
-    Ok(())
-}
-
-// ── Sinks ────────────────────────────────────────────────────────────────────
-
-/// Stage 3: receive every BatchOutcome and write JSONL to stdout.
-async fn write_results(mut rx: broadcast::Receiver<BatchOutcome>) -> Result<u64> {
-    let mut writer = BufWriter::new(tokio::io::stdout());
-    let mut count = 0u64;
-    loop {
-        match rx.recv().await {
-            Ok(outcome) => {
-                for entry in &outcome.languages {
-                    if entry.languages.is_empty() {
-                        continue;
-                    }
-                    let line = serde_json::to_string(entry).context("serialise")?;
-                    writer.write_all(line.as_bytes()).await?;
-                    writer.write_all(b"\n").await?;
-                    count += 1;
-                }
-            }
-            Err(broadcast::error::RecvError::Closed) => break,
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                eprintln!(
-                    "  [writer] warning: {n} outcomes skipped due to lag — output may be incomplete"
-                );
-            }
-        }
-    }
-    writer.flush().await?;
-    Ok(count)
-}
-
-/// Stage 4: receive every BatchOutcome and print a progress line to stderr.
-async fn log_results(mut rx: broadcast::Receiver<BatchOutcome>, total_batches: usize) {
-    let total_repos = total_batches * BATCH_SIZE; // upper bound; last batch may be smaller
-    let mut repos_done: usize = 0;
-    let mut batches_done: usize = 0;
-    loop {
-        match rx.recv().await {
-            Ok(outcome) => {
-                repos_done += outcome.languages.len();
-                batches_done += 1;
-                let rl = outcome
-                    .rate_limit
-                    .map(|(c, r)| format!("  [rate-limit: cost={c}/remaining={r}]"))
-                    .unwrap_or_default();
-                eprintln!(
-                    "[repos={repos_done} / batch {batches_done}/{total_batches} (~{total_repos} repos)]{rl}  [{}]",
-                    outcome.elapsed.human(Truncate::Millis)
-                );
-            }
-            Err(broadcast::error::RecvError::Closed) => break,
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                eprintln!("  [logger] skipped {n} progress lines due to lag");
-            }
-        }
-    }
 }
 
 // ── Worker ────────────────────────────────────────────────────────────────────

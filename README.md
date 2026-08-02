@@ -78,7 +78,7 @@ export GITHUB_TOKEN=ghp_…
 awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' \
     "data/archive-${YEAR}${MONTH}-filtered.csv" | sort -u \
   | cargo run --release --bin github_language_loader -- \
-      --workers 10 \
+      --wait-ms 100 \
   > "data/languages-${YEAR}-${MONTH}.jsonl"
 
 # Step 4 — compute weighted per-language ratings (one output file per statistic type)
