@@ -1,430 +1,300 @@
-{"language":"Python","rating":158002.0,"percentage":15.09}
-{"language":"TypeScript","rating":155604.0,"percentage":14.86}
-{"language":"JavaScript","rating":136056.0,"percentage":13.0}
-{"language":"Java","rating":84339.0,"percentage":8.06}
-{"language":"HTML","rating":74239.0,"percentage":7.09}
-{"language":"Go","rating":49917.0,"percentage":4.77}
-{"language":"C++","rating":38470.0,"percentage":3.67}
-{"language":"C#","rating":37986.0,"percentage":3.63}
-{"language":"PHP","rating":29403.0,"percentage":2.81}
-{"language":"Rust","rating":29116.0,"percentage":2.78}
-{"language":"Shell","rating":22879.0,"percentage":2.19}
-{"language":"Jupyter Notebook","rating":22504.0,"percentage":2.15}
-{"language":"C","rating":21679.0,"percentage":2.07}
-{"language":"CSS","rating":18421.0,"percentage":1.76}
-{"language":"Kotlin","rating":16038.0,"percentage":1.53}
-{"language":"Ruby","rating":14860.0,"percentage":1.42}
-{"language":"Vue","rating":9476.0,"percentage":0.91}
-{"language":"Dart","rating":8931.0,"percentage":0.85}
-{"language":"HCL","rating":6874.0,"percentage":0.66}
-{"language":"Swift","rating":6618.0,"percentage":0.63}
-{"language":"Lua","rating":5816.0,"percentage":0.56}
-{"language":"Dockerfile","rating":5070.0,"percentage":0.48}
-{"language":"MDX","rating":4804.0,"percentage":0.46}
-{"language":"R","rating":4711.0,"percentage":0.45}
-{"language":"SCSS","rating":4667.0,"percentage":0.45}
-{"language":"Scala","rating":4440.0,"percentage":0.42}
-{"language":"Makefile","rating":3437.0,"percentage":0.33}
-{"language":"Nix","rating":3120.0,"percentage":0.3}
-{"language":"PowerShell","rating":3010.0,"percentage":0.29}
-{"language":"Svelte","rating":2996.0,"percentage":0.29}
-{"language":"Julia","rating":2886.0,"percentage":0.28}
-{"language":"Astro","rating":2768.0,"percentage":0.26}
-{"language":"TeX","rating":2332.0,"percentage":0.22}
-{"language":"GDScript","rating":2307.0,"percentage":0.22}
-{"language":"Smarty","rating":2198.0,"percentage":0.21}
-{"language":"Solidity","rating":2082.0,"percentage":0.2}
-{"language":"Elixir","rating":1843.0,"percentage":0.18}
-{"language":"CMake","rating":1794.0,"percentage":0.17}
-{"language":"Blade","rating":1713.0,"percentage":0.16}
-{"language":"ShaderLab","rating":1688.0,"percentage":0.16}
-{"language":"Jinja","rating":1577.0,"percentage":0.15}
-{"language":"DM","rating":1556.0,"percentage":0.15}
-{"language":"Haskell","rating":1356.0,"percentage":0.13}
-{"language":"Fortran","rating":1241.0,"percentage":0.12}
-{"language":"Rich Text Format","rating":1098.0,"percentage":0.1}
-{"language":"Perl","rating":1077.0,"percentage":0.1}
-{"language":"LLVM","rating":1073.0,"percentage":0.1}
-{"language":"Markdown","rating":1048.0,"percentage":0.1}
-{"language":"GCC Machine Description","rating":961.0,"percentage":0.09}
-{"language":"Groovy","rating":942.0,"percentage":0.09}
-{"language":"EJS","rating":922.0,"percentage":0.09}
-{"language":"Mustache","rating":780.0,"percentage":0.07}
-{"language":"Zig","rating":769.0,"percentage":0.07}
-{"language":"Clojure","rating":755.0,"percentage":0.07}
-{"language":"Assembly","rating":712.0,"percentage":0.07}
-{"language":"OCaml","rating":707.0,"percentage":0.07}
-{"language":"Objective-C","rating":656.0,"percentage":0.06}
-{"language":"Batchfile","rating":627.0,"percentage":0.06}
-{"language":"XSLT","rating":619.0,"percentage":0.06}
-{"language":"MATLAB","rating":610.0,"percentage":0.06}
-{"language":"PLpgSQL","rating":572.0,"percentage":0.05}
-{"language":"Starlark","rating":572.0,"percentage":0.05}
-{"language":"Mathematica","rating":530.0,"percentage":0.05}
-{"language":"Emacs Lisp","rating":528.0,"percentage":0.05}
-{"language":"TSQL","rating":464.0,"percentage":0.04}
-{"language":"Nextflow","rating":440.0,"percentage":0.04}
-{"language":"Handlebars","rating":434.0,"percentage":0.04}
-{"language":"Lean","rating":430.0,"percentage":0.04}
-{"language":"GLSL","rating":427.0,"percentage":0.04}
-{"language":"Nunjucks","rating":394.0,"percentage":0.04}
-{"language":"Apex","rating":383.0,"percentage":0.04}
-{"language":"Bicep","rating":369.0,"percentage":0.04}
-{"language":"Roff","rating":369.0,"percentage":0.04}
-{"language":"Liquid","rating":356.0,"percentage":0.03}
-{"language":"Verilog","rating":338.0,"percentage":0.03}
-{"language":"Erlang","rating":331.0,"percentage":0.03}
-{"language":"Vim Script","rating":330.0,"percentage":0.03}
-{"language":"Clarity","rating":325.0,"percentage":0.03}
-{"language":"Twig","rating":319.0,"percentage":0.03}
-{"language":"BitBake","rating":316.0,"percentage":0.03}
-{"language":"Hack","rating":312.0,"percentage":0.03}
-{"language":"Cairo","rating":301.0,"percentage":0.03}
-{"language":"SystemVerilog","rating":297.0,"percentage":0.03}
-{"language":"Cuda","rating":292.0,"percentage":0.03}
-{"language":"Jsonnet","rating":277.0,"percentage":0.03}
-{"language":"F#","rating":271.0,"percentage":0.03}
-{"language":"Pascal","rating":269.0,"percentage":0.03}
-{"language":"Common Lisp","rating":267.0,"percentage":0.03}
-{"language":"YAML","rating":267.0,"percentage":0.03}
-{"language":"TypeSpec","rating":254.0,"percentage":0.02}
-{"language":"Gherkin","rating":244.0,"percentage":0.02}
-{"language":"Move","rating":240.0,"percentage":0.02}
-{"language":"Typst","rating":230.0,"percentage":0.02}
-{"language":"Haxe","rating":228.0,"percentage":0.02}
-{"language":"Smalltalk","rating":225.0,"percentage":0.02}
-{"language":"Nim","rating":214.0,"percentage":0.02}
-{"language":"QML","rating":211.0,"percentage":0.02}
-{"language":"Coq","rating":200.0,"percentage":0.02}
-{"language":"Less","rating":196.0,"percentage":0.02}
-{"language":"Tcl","rating":191.0,"percentage":0.02}
-{"language":"Just","rating":188.0,"percentage":0.02}
-{"language":"Game Maker Language","rating":164.0,"percentage":0.02}
-{"language":"Visual Basic .NET","rating":162.0,"percentage":0.02}
-{"language":"Elm","rating":157.0,"percentage":0.01}
-{"language":"VHDL","rating":157.0,"percentage":0.01}
-{"language":"Ballerina","rating":156.0,"percentage":0.01}
-{"language":"Scheme","rating":146.0,"percentage":0.01}
-{"language":"Bikeshed","rating":143.0,"percentage":0.01}
-{"language":"Crystal","rating":143.0,"percentage":0.01}
-{"language":"D","rating":141.0,"percentage":0.01}
-{"language":"Open Policy Agent","rating":137.0,"percentage":0.01}
-{"language":"Stylus","rating":137.0,"percentage":0.01}
-{"language":"SQF","rating":129.0,"percentage":0.01}
-{"language":"SourcePawn","rating":129.0,"percentage":0.01}
-{"language":"Puppet","rating":126.0,"percentage":0.01}
-{"language":"ABAP","rating":123.0,"percentage":0.01}
-{"language":"Luau","rating":123.0,"percentage":0.01}
-{"language":"Prolog","rating":114.0,"percentage":0.01}
-{"language":"Odin","rating":111.0,"percentage":0.01}
-{"language":"mcfunction","rating":111.0,"percentage":0.01}
-{"language":"reStructuredText","rating":110.0,"percentage":0.01}
-{"language":"Vala","rating":108.0,"percentage":0.01}
-{"language":"PureScript","rating":107.0,"percentage":0.01}
-{"language":"Racket","rating":107.0,"percentage":0.01}
-{"language":"Nushell","rating":105.0,"percentage":0.01}
-{"language":"Cython","rating":98.0,"percentage":0.01}
-{"language":"ASP.NET","rating":97.0,"percentage":0.01}
-{"language":"Processing","rating":95.0,"percentage":0.01}
-{"language":"Gleam","rating":94.0,"percentage":0.01}
-{"language":"AL","rating":90.0,"percentage":0.01}
-{"language":"Adblock Filter List","rating":88.0,"percentage":0.01}
-{"language":"ReScript","rating":88.0,"percentage":0.01}
-{"language":"XQuery","rating":88.0,"percentage":0.01}
-{"language":"MLIR","rating":84.0,"percentage":0.01}
-{"language":"RobotFramework","rating":84.0,"percentage":0.01}
-{"language":"OpenSCAD","rating":83.0,"percentage":0.01}
-{"language":"HLSL","rating":81.0,"percentage":0.01}
-{"language":"1C Enterprise","rating":79.0,"percentage":0.01}
-{"language":"PostScript","rating":78.0,"percentage":0.01}
-{"language":"MoonBit","rating":77.0,"percentage":0.01}
-{"language":"PLSQL","rating":74.0,"percentage":0.01}
-{"language":"ASL","rating":71.0,"percentage":0.01}
-{"language":"CodeQL","rating":71.0,"percentage":0.01}
-{"language":"Fluent","rating":70.0,"percentage":0.01}
-{"language":"Sass","rating":70.0,"percentage":0.01}
-{"language":"AutoHotkey","rating":69.0,"percentage":0.01}
-{"language":"Pug","rating":69.0,"percentage":0.01}
-{"language":"Agda","rating":68.0,"percentage":0.01}
-{"language":"CoffeeScript","rating":68.0,"percentage":0.01}
-{"language":"Vim script","rating":68.0,"percentage":0.01}
-{"language":"ZenScript","rating":67.0,"percentage":0.01}
-{"language":"Ren'Py","rating":65.0,"percentage":0.01}
-{"language":"AMPL","rating":64.0,"percentage":0.01}
-{"language":"XML","rating":63.0,"percentage":0.01}
-{"language":"ColdFusion","rating":62.0,"percentage":0.01}
-{"language":"WebAssembly","rating":62.0,"percentage":0.01}
-{"language":"Ada","rating":61.0,"percentage":0.01}
-{"language":"FreeMarker","rating":60.0,"percentage":0.01}
+{"language":"TypeScript","rating":66261.0,"percentage":15.97}
+{"language":"Python","rating":64706.0,"percentage":15.6}
+{"language":"JavaScript","rating":46760.0,"percentage":11.27}
+{"language":"Java","rating":34606.0,"percentage":8.34}
+{"language":"HTML","rating":23270.0,"percentage":5.61}
+{"language":"Go","rating":22969.0,"percentage":5.54}
+{"language":"C++","rating":19281.0,"percentage":4.65}
+{"language":"Rust","rating":14986.0,"percentage":3.61}
+{"language":"C#","rating":14786.0,"percentage":3.56}
+{"language":"C","rating":10397.0,"percentage":2.51}
+{"language":"PHP","rating":9621.0,"percentage":2.32}
+{"language":"Shell","rating":8040.0,"percentage":1.94}
+{"language":"Jupyter Notebook","rating":7875.0,"percentage":1.9}
+{"language":"Kotlin","rating":6471.0,"percentage":1.56}
+{"language":"CSS","rating":5059.0,"percentage":1.22}
+{"language":"Ruby","rating":5043.0,"percentage":1.22}
+{"language":"Vue","rating":3201.0,"percentage":0.77}
+{"language":"Dart","rating":2998.0,"percentage":0.72}
+{"language":"MDX","rating":2818.0,"percentage":0.68}
+{"language":"Swift","rating":2430.0,"percentage":0.59}
+{"language":"Lua","rating":2311.0,"percentage":0.56}
+{"language":"HCL","rating":2061.0,"percentage":0.5}
+{"language":"Nix","rating":1817.0,"percentage":0.44}
+{"language":"Scala","rating":1725.0,"percentage":0.42}
+{"language":"SCSS","rating":1423.0,"percentage":0.34}
+{"language":"PowerShell","rating":1238.0,"percentage":0.3}
+{"language":"GDScript","rating":1204.0,"percentage":0.29}
+{"language":"R","rating":1198.0,"percentage":0.29}
+{"language":"Svelte","rating":1152.0,"percentage":0.28}
+{"language":"DM","rating":1120.0,"percentage":0.27}
+{"language":"Julia","rating":1084.0,"percentage":0.26}
+{"language":"Dockerfile","rating":1054.0,"percentage":0.25}
+{"language":"Makefile","rating":1004.0,"percentage":0.24}
+{"language":"LLVM","rating":970.0,"percentage":0.23}
+{"language":"Smarty","rating":966.0,"percentage":0.23}
+{"language":"GCC Machine Description","rating":961.0,"percentage":0.23}
+{"language":"Rich Text Format","rating":934.0,"percentage":0.23}
+{"language":"Solidity","rating":884.0,"percentage":0.21}
+{"language":"ShaderLab","rating":841.0,"percentage":0.2}
+{"language":"Markdown","rating":812.0,"percentage":0.2}
+{"language":"CMake","rating":801.0,"percentage":0.19}
+{"language":"TeX","rating":741.0,"percentage":0.18}
+{"language":"Blade","rating":699.0,"percentage":0.17}
+{"language":"Fortran","rating":624.0,"percentage":0.15}
+{"language":"Astro","rating":611.0,"percentage":0.15}
+{"language":"Elixir","rating":599.0,"percentage":0.14}
+{"language":"Jinja","rating":517.0,"percentage":0.12}
+{"language":"Haskell","rating":490.0,"percentage":0.12}
+{"language":"Zig","rating":456.0,"percentage":0.11}
+{"language":"Perl","rating":426.0,"percentage":0.1}
+{"language":"OCaml","rating":395.0,"percentage":0.1}
+{"language":"Groovy","rating":360.0,"percentage":0.09}
+{"language":"Mustache","rating":352.0,"percentage":0.08}
+{"language":"Assembly","rating":350.0,"percentage":0.08}
+{"language":"Clojure","rating":317.0,"percentage":0.08}
+{"language":"Lean","rating":302.0,"percentage":0.07}
+{"language":"Starlark","rating":292.0,"percentage":0.07}
+{"language":"Mathematica","rating":278.0,"percentage":0.07}
+{"language":"XSLT","rating":262.0,"percentage":0.06}
+{"language":"PLpgSQL","rating":258.0,"percentage":0.06}
+{"language":"TSQL","rating":237.0,"percentage":0.06}
+{"language":"TypeSpec","rating":237.0,"percentage":0.06}
+{"language":"Emacs Lisp","rating":223.0,"percentage":0.05}
+{"language":"Cairo","rating":215.0,"percentage":0.05}
+{"language":"Handlebars","rating":206.0,"percentage":0.05}
+{"language":"Nextflow","rating":193.0,"percentage":0.05}
+{"language":"Cuda","rating":186.0,"percentage":0.04}
+{"language":"Batchfile","rating":184.0,"percentage":0.04}
+{"language":"EJS","rating":180.0,"percentage":0.04}
+{"language":"GLSL","rating":175.0,"percentage":0.04}
+{"language":"Objective-C","rating":167.0,"percentage":0.04}
+{"language":"BitBake","rating":165.0,"percentage":0.04}
+{"language":"Apex","rating":144.0,"percentage":0.03}
+{"language":"SystemVerilog","rating":142.0,"percentage":0.03}
+{"language":"Erlang","rating":140.0,"percentage":0.03}
+{"language":"Move","rating":140.0,"percentage":0.03}
+{"language":"Verilog","rating":137.0,"percentage":0.03}
+{"language":"Roff","rating":136.0,"percentage":0.03}
+{"language":"YAML","rating":135.0,"percentage":0.03}
+{"language":"Gherkin","rating":130.0,"percentage":0.03}
+{"language":"Nim","rating":128.0,"percentage":0.03}
+{"language":"Bicep","rating":126.0,"percentage":0.03}
+{"language":"Hack","rating":123.0,"percentage":0.03}
+{"language":"Liquid","rating":122.0,"percentage":0.03}
+{"language":"MATLAB","rating":114.0,"percentage":0.03}
+{"language":"Nunjucks","rating":112.0,"percentage":0.03}
+{"language":"Tcl","rating":112.0,"percentage":0.03}
+{"language":"Haxe","rating":110.0,"percentage":0.03}
+{"language":"Twig","rating":106.0,"percentage":0.03}
+{"language":"Typst","rating":98.0,"percentage":0.02}
+{"language":"Less","rating":96.0,"percentage":0.02}
+{"language":"reStructuredText","rating":95.0,"percentage":0.02}
+{"language":"Bikeshed","rating":94.0,"percentage":0.02}
+{"language":"Open Policy Agent","rating":88.0,"percentage":0.02}
+{"language":"Scheme","rating":88.0,"percentage":0.02}
+{"language":"Vim Script","rating":88.0,"percentage":0.02}
+{"language":"Jsonnet","rating":87.0,"percentage":0.02}
+{"language":"Pascal","rating":85.0,"percentage":0.02}
+{"language":"QML","rating":81.0,"percentage":0.02}
+{"language":"Common Lisp","rating":80.0,"percentage":0.02}
+{"language":"Coq","rating":80.0,"percentage":0.02}
+{"language":"Odin","rating":77.0,"percentage":0.02}
+{"language":"Adblock Filter List","rating":71.0,"percentage":0.02}
+{"language":"F#","rating":69.0,"percentage":0.02}
+{"language":"ASP.NET","rating":68.0,"percentage":0.02}
+{"language":"Game Maker Language","rating":68.0,"percentage":0.02}
+{"language":"MLIR","rating":68.0,"percentage":0.02}
+{"language":"Smalltalk","rating":68.0,"percentage":0.02}
+{"language":"Just","rating":67.0,"percentage":0.02}
+{"language":"SQF","rating":65.0,"percentage":0.02}
+{"language":"PureScript","rating":62.0,"percentage":0.01}
+{"language":"Ballerina","rating":61.0,"percentage":0.01}
+{"language":"VHDL","rating":61.0,"percentage":0.01}
+{"language":"CodeQL","rating":60.0,"percentage":0.01}
+{"language":"Nushell","rating":60.0,"percentage":0.01}
+{"language":"HLSL","rating":59.0,"percentage":0.01}
 {"language":"RPM Spec","rating":59.0,"percentage":0.01}
-{"language":"JSON","rating":57.0,"percentage":0.01}
-{"language":"Noir","rating":57.0,"percentage":0.01}
-{"language":"Stata","rating":57.0,"percentage":0.01}
-{"language":"V","rating":57.0,"percentage":0.01}
-{"language":"WDL","rating":57.0,"percentage":0.01}
-{"language":"Objective-C++","rating":55.0,"percentage":0.01}
-{"language":"Mermaid","rating":54.0,"percentage":0.01}
-{"language":"Mojo","rating":54.0,"percentage":0.01}
-{"language":"Motoko","rating":53.0,"percentage":0.01}
-{"language":"Standard ML","rating":53.0,"percentage":0.01}
-{"language":"Raku","rating":52.0,"percentage":0.0}
-{"language":"Modelica","rating":51.0,"percentage":0.0}
-{"language":"Squirrel","rating":50.0,"percentage":0.0}
-{"language":"COBOL","rating":49.0,"percentage":0.0}
-{"language":"AGS Script","rating":44.0,"percentage":0.0}
-{"language":"CUE","rating":44.0,"percentage":0.0}
-{"language":"Roc","rating":42.0,"percentage":0.0}
-{"language":"G-code","rating":41.0,"percentage":0.0}
-{"language":"Meson","rating":41.0,"percentage":0.0}
-{"language":"GAP","rating":39.0,"percentage":0.0}
-{"language":"LabVIEW","rating":39.0,"percentage":0.0}
-{"language":"YARA","rating":39.0,"percentage":0.0}
-{"language":"mIRC Script","rating":39.0,"percentage":0.0}
-{"language":"API Blueprint","rating":37.0,"percentage":0.0}
-{"language":"LookML","rating":36.0,"percentage":0.0}
-{"language":"Cirru","rating":35.0,"percentage":0.0}
-{"language":"Inno Setup","rating":35.0,"percentage":0.0}
-{"language":"NSIS","rating":35.0,"percentage":0.0}
-{"language":"SaltStack","rating":35.0,"percentage":0.0}
-{"language":"GAMS","rating":34.0,"percentage":0.0}
-{"language":"Idris","rating":34.0,"percentage":0.0}
-{"language":"Logos","rating":34.0,"percentage":0.0}
-{"language":"VBA","rating":34.0,"percentage":0.0}
-{"language":"Yacc","rating":34.0,"percentage":0.0}
-{"language":"Zeek","rating":33.0,"percentage":0.0}
-{"language":"Circom","rating":32.0,"percentage":0.0}
-{"language":"M4","rating":32.0,"percentage":0.0}
-{"language":"SMT","rating":32.0,"percentage":0.0}
-{"language":"templ","rating":32.0,"percentage":0.0}
-{"language":"PureBasic","rating":31.0,"percentage":0.0}
-{"language":"Reason","rating":31.0,"percentage":0.0}
-{"language":"AsciiDoc","rating":30.0,"percentage":0.0}
-{"language":"AngelScript","rating":29.0,"percentage":0.0}
-{"language":"Visual Basic 6.0","rating":29.0,"percentage":0.0}
-{"language":"F*","rating":28.0,"percentage":0.0}
-{"language":"SAS","rating":28.0,"percentage":0.0}
-{"language":"DTrace","rating":27.0,"percentage":0.0}
-{"language":"DIGITAL Command Language","rating":26.0,"percentage":0.0}
-{"language":"SWIG","rating":26.0,"percentage":0.0}
-{"language":"Cadence","rating":25.0,"percentage":0.0}
-{"language":"Max","rating":25.0,"percentage":0.0}
-{"language":"Isabelle","rating":24.0,"percentage":0.0}
-{"language":"Pawn","rating":24.0,"percentage":0.0}
-{"language":"Antlers","rating":23.0,"percentage":0.0}
-{"language":"Chapel","rating":23.0,"percentage":0.0}
-{"language":"Common Workflow Language","rating":23.0,"percentage":0.0}
-{"language":"Cypher","rating":23.0,"percentage":0.0}
-{"language":"Earthly","rating":23.0,"percentage":0.0}
-{"language":"JetBrains MPS","rating":23.0,"percentage":0.0}
-{"language":"NCL","rating":23.0,"percentage":0.0}
-{"language":"Pony","rating":23.0,"percentage":0.0}
-{"language":"RAML","rating":23.0,"percentage":0.0}
-{"language":"RPC","rating":22.0,"percentage":0.0}
-{"language":"ANTLR","rating":21.0,"percentage":0.0}
-{"language":"Text","rating":21.0,"percentage":0.0}
-{"language":"hoon","rating":21.0,"percentage":0.0}
-{"language":"SQL","rating":20.0,"percentage":0.0}
-{"language":"Xtend","rating":20.0,"percentage":0.0}
-{"language":"Marko","rating":19.0,"percentage":0.0}
-{"language":"UnrealScript","rating":19.0,"percentage":0.0}
-{"language":"Brainfuck","rating":18.0,"percentage":0.0}
-{"language":"CAP CDS","rating":18.0,"percentage":0.0}
-{"language":"OpenQASM","rating":18.0,"percentage":0.0}
-{"language":"nesC","rating":18.0,"percentage":0.0}
-{"language":"Gnuplot","rating":16.0,"percentage":0.0}
-{"language":"OpenEdge ABL","rating":16.0,"percentage":0.0}
-{"language":"Dhall","rating":15.0,"percentage":0.0}
-{"language":"ActionScript","rating":14.0,"percentage":0.0}
-{"language":"Haml","rating":14.0,"percentage":0.0}
+{"language":"Vala","rating":58.0,"percentage":0.01}
+{"language":"Vim script","rating":58.0,"percentage":0.01}
+{"language":"AL","rating":56.0,"percentage":0.01}
+{"language":"mcfunction","rating":56.0,"percentage":0.01}
+{"language":"D","rating":55.0,"percentage":0.01}
+{"language":"Visual Basic .NET","rating":54.0,"percentage":0.01}
+{"language":"XML","rating":53.0,"percentage":0.01}
+{"language":"Fluent","rating":52.0,"percentage":0.01}
+{"language":"Racket","rating":51.0,"percentage":0.01}
+{"language":"Elm","rating":48.0,"percentage":0.01}
+{"language":"Prolog","rating":48.0,"percentage":0.01}
+{"language":"Crystal","rating":47.0,"percentage":0.01}
+{"language":"XQuery","rating":46.0,"percentage":0.01}
+{"language":"ReScript","rating":45.0,"percentage":0.01}
+{"language":"JSON","rating":44.0,"percentage":0.01}
+{"language":"Luau","rating":43.0,"percentage":0.01}
+{"language":"RobotFramework","rating":43.0,"percentage":0.01}
+{"language":"Puppet","rating":42.0,"percentage":0.01}
+{"language":"Mojo","rating":41.0,"percentage":0.01}
+{"language":"MoonBit","rating":41.0,"percentage":0.01}
+{"language":"ZenScript","rating":41.0,"percentage":0.01}
+{"language":"Modelica","rating":39.0,"percentage":0.01}
+{"language":"ABAP","rating":38.0,"percentage":0.01}
+{"language":"Agda","rating":38.0,"percentage":0.01}
+{"language":"Stylus","rating":34.0,"percentage":0.01}
+{"language":"Motoko","rating":32.0,"percentage":0.01}
+{"language":"PostScript","rating":31.0,"percentage":0.01}
+{"language":"WebAssembly","rating":31.0,"percentage":0.01}
+{"language":"Objective-C++","rating":30.0,"percentage":0.01}
+{"language":"Sass","rating":30.0,"percentage":0.01}
+{"language":"AsciiDoc","rating":29.0,"percentage":0.01}
+{"language":"OpenSCAD","rating":29.0,"percentage":0.01}
+{"language":"API Blueprint","rating":28.0,"percentage":0.01}
+{"language":"WDL","rating":28.0,"percentage":0.01}
+{"language":"CUE","rating":27.0,"percentage":0.01}
+{"language":"V","rating":27.0,"percentage":0.01}
+{"language":"GAMS","rating":26.0,"percentage":0.01}
+{"language":"Meson","rating":25.0,"percentage":0.01}
+{"language":"mIRC Script","rating":25.0,"percentage":0.01}
+{"language":"SourcePawn","rating":24.0,"percentage":0.01}
+{"language":"1C Enterprise","rating":23.0,"percentage":0.01}
+{"language":"AutoHotkey","rating":23.0,"percentage":0.01}
+{"language":"F*","rating":23.0,"percentage":0.01}
+{"language":"Zeek","rating":22.0,"percentage":0.01}
+{"language":"Gleam","rating":21.0,"percentage":0.01}
+{"language":"JetBrains MPS","rating":21.0,"percentage":0.01}
+{"language":"Mermaid","rating":21.0,"percentage":0.01}
+{"language":"Ren'Py","rating":21.0,"percentage":0.01}
+{"language":"COBOL","rating":20.0,"percentage":0.0}
+{"language":"Chapel","rating":20.0,"percentage":0.0}
+{"language":"AMPL","rating":19.0,"percentage":0.0}
+{"language":"Cython","rating":19.0,"percentage":0.0}
+{"language":"FreeMarker","rating":19.0,"percentage":0.0}
+{"language":"NCL","rating":19.0,"percentage":0.0}
+{"language":"RPC","rating":19.0,"percentage":0.0}
+{"language":"Reason","rating":19.0,"percentage":0.0}
+{"language":"Squirrel","rating":19.0,"percentage":0.0}
+{"language":"YARA","rating":19.0,"percentage":0.0}
+{"language":"AGS Script","rating":18.0,"percentage":0.0}
+{"language":"PLSQL","rating":18.0,"percentage":0.0}
+{"language":"Standard ML","rating":18.0,"percentage":0.0}
+{"language":"Text","rating":18.0,"percentage":0.0}
+{"language":"Antlers","rating":17.0,"percentage":0.0}
+{"language":"Isabelle","rating":17.0,"percentage":0.0}
+{"language":"Raku","rating":17.0,"percentage":0.0}
+{"language":"Roc","rating":17.0,"percentage":0.0}
+{"language":"Ada","rating":16.0,"percentage":0.0}
+{"language":"Brainfuck","rating":15.0,"percentage":0.0}
+{"language":"Idris","rating":15.0,"percentage":0.0}
+{"language":"Xtend","rating":15.0,"percentage":0.0}
+{"language":"ColdFusion","rating":14.0,"percentage":0.0}
 {"language":"Rez","rating":14.0,"percentage":0.0}
-{"language":"Thrift","rating":14.0,"percentage":0.0}
-{"language":"VBScript","rating":14.0,"percentage":0.0}
-{"language":"Vim Snippet","rating":14.0,"percentage":0.0}
-{"language":"q","rating":14.0,"percentage":0.0}
-{"language":"xBase","rating":14.0,"percentage":0.0}
-{"language":"Fennel","rating":13.0,"percentage":0.0}
-{"language":"IDL","rating":13.0,"percentage":0.0}
-{"language":"MAXScript","rating":13.0,"percentage":0.0}
-{"language":"Monkey C","rating":13.0,"percentage":0.0}
-{"language":"Papyrus","rating":13.0,"percentage":0.0}
-{"language":"Pkl","rating":13.0,"percentage":0.0}
-{"language":"REXX","rating":13.0,"percentage":0.0}
-{"language":"Rebol","rating":13.0,"percentage":0.0}
-{"language":"Sway","rating":13.0,"percentage":0.0}
-{"language":"Wikitext","rating":13.0,"percentage":0.0}
-{"language":"Awk","rating":12.0,"percentage":0.0}
+{"language":"SMT","rating":14.0,"percentage":0.0}
+{"language":"ASL","rating":13.0,"percentage":0.0}
+{"language":"Inno Setup","rating":13.0,"percentage":0.0}
+{"language":"Logos","rating":13.0,"percentage":0.0}
+{"language":"ANTLR","rating":12.0,"percentage":0.0}
 {"language":"Clean","rating":12.0,"percentage":0.0}
-{"language":"DataWeave","rating":12.0,"percentage":0.0}
-{"language":"Forth","rating":12.0,"percentage":0.0}
-{"language":"ObjectScript","rating":12.0,"percentage":0.0}
-{"language":"sed","rating":12.0,"percentage":0.0}
-{"language":"BrighterScript","rating":11.0,"percentage":0.0}
-{"language":"Brightscript","rating":11.0,"percentage":0.0}
-{"language":"Edge","rating":11.0,"percentage":0.0}
-{"language":"Io","rating":11.0,"percentage":0.0}
-{"language":"Latte","rating":11.0,"percentage":0.0}
-{"language":"NetLogo","rating":11.0,"percentage":0.0}
-{"language":"PowerBuilder","rating":11.0,"percentage":0.0}
-{"language":"RenderScript","rating":11.0,"percentage":0.0}
-{"language":"SVG","rating":11.0,"percentage":0.0}
-{"language":"Scilab","rating":11.0,"percentage":0.0}
-{"language":"APL","rating":10.0,"percentage":0.0}
-{"language":"AutoIt","rating":10.0,"percentage":0.0}
-{"language":"Modula-3","rating":10.0,"percentage":0.0}
-{"language":"NWScript","rating":10.0,"percentage":0.0}
-{"language":"QMake","rating":10.0,"percentage":0.0}
-{"language":"Slim","rating":10.0,"percentage":0.0}
-{"language":"Classic ASP","rating":9.0,"percentage":0.0}
-{"language":"Dylan","rating":9.0,"percentage":0.0}
-{"language":"Euphoria","rating":9.0,"percentage":0.0}
-{"language":"Lex","rating":9.0,"percentage":0.0}
-{"language":"RouterOS Script","rating":9.0,"percentage":0.0}
+{"language":"Processing","rating":12.0,"percentage":0.0}
+{"language":"Marko","rating":11.0,"percentage":0.0}
+{"language":"Noir","rating":11.0,"percentage":0.0}
+{"language":"Pug","rating":11.0,"percentage":0.0}
+{"language":"Wikitext","rating":11.0,"percentage":0.0}
+{"language":"LabVIEW","rating":10.0,"percentage":0.0}
+{"language":"LookML","rating":10.0,"percentage":0.0}
+{"language":"M4","rating":10.0,"percentage":0.0}
+{"language":"hoon","rating":10.0,"percentage":0.0}
+{"language":"AngelScript","rating":9.0,"percentage":0.0}
+{"language":"Earthly","rating":9.0,"percentage":0.0}
+{"language":"OpenEdge ABL","rating":9.0,"percentage":0.0}
 {"language":"Smithy","rating":9.0,"percentage":0.0}
-{"language":"SuperCollider","rating":9.0,"percentage":0.0}
-{"language":"Fantom","rating":8.0,"percentage":0.0}
-{"language":"Macaulay2","rating":8.0,"percentage":0.0}
-{"language":"NetLinx","rating":8.0,"percentage":0.0}
-{"language":"RPGLE","rating":8.0,"percentage":0.0}
-{"language":"Riot","rating":8.0,"percentage":0.0}
+{"language":"UnrealScript","rating":9.0,"percentage":0.0}
+{"language":"CoffeeScript","rating":8.0,"percentage":0.0}
+{"language":"G-code","rating":8.0,"percentage":0.0}
 {"language":"Sage","rating":8.0,"percentage":0.0}
-{"language":"Toit","rating":8.0,"percentage":0.0}
-{"language":"eC","rating":8.0,"percentage":0.0}
-{"language":"BASIC","rating":7.0,"percentage":0.0}
-{"language":"LilyPond","rating":7.0,"percentage":0.0}
-{"language":"Nasal","rating":7.0,"percentage":0.0}
-{"language":"PDDL","rating":7.0,"percentage":0.0}
-{"language":"VCL","rating":7.0,"percentage":0.0}
-{"language":"Velocity Template Language","rating":7.0,"percentage":0.0}
-{"language":"Vyper","rating":7.0,"percentage":0.0}
-{"language":"ZAP","rating":7.0,"percentage":0.0}
-{"language":"4D","rating":6.0,"percentage":0.0}
-{"language":"FreeBASIC","rating":6.0,"percentage":0.0}
-{"language":"Metal","rating":6.0,"percentage":0.0}
-{"language":"XC","rating":6.0,"percentage":0.0}
-{"language":"jq","rating":6.0,"percentage":0.0}
+{"language":"Sway","rating":8.0,"percentage":0.0}
+{"language":"VBA","rating":8.0,"percentage":0.0}
+{"language":"Visual Basic 6.0","rating":8.0,"percentage":0.0}
+{"language":"ActionScript","rating":7.0,"percentage":0.0}
+{"language":"Circom","rating":7.0,"percentage":0.0}
+{"language":"Cypher","rating":7.0,"percentage":0.0}
+{"language":"DTrace","rating":7.0,"percentage":0.0}
+{"language":"GAP","rating":7.0,"percentage":0.0}
+{"language":"Gnuplot","rating":7.0,"percentage":0.0}
+{"language":"VBScript","rating":7.0,"percentage":0.0}
+{"language":"q","rating":7.0,"percentage":0.0}
+{"language":"CAP CDS","rating":6.0,"percentage":0.0}
+{"language":"NWScript","rating":6.0,"percentage":0.0}
+{"language":"Pkl","rating":6.0,"percentage":0.0}
+{"language":"RAML","rating":6.0,"percentage":0.0}
+{"language":"SAS","rating":6.0,"percentage":0.0}
+{"language":"SVG","rating":6.0,"percentage":0.0}
+{"language":"Velocity Template Language","rating":6.0,"percentage":0.0}
+{"language":"templ","rating":6.0,"percentage":0.0}
+{"language":"AutoIt","rating":5.0,"percentage":0.0}
 {"language":"Bluespec","rating":5.0,"percentage":0.0}
-{"language":"CartoCSS","rating":5.0,"percentage":0.0}
-{"language":"DenizenScript","rating":5.0,"percentage":0.0}
+{"language":"Dhall","rating":5.0,"percentage":0.0}
 {"language":"Diff","rating":5.0,"percentage":0.0}
-{"language":"GSC","rating":5.0,"percentage":0.0}
-{"language":"HolyC","rating":5.0,"percentage":0.0}
-{"language":"HyPhy","rating":5.0,"percentage":0.0}
-{"language":"LSL","rating":5.0,"percentage":0.0}
-{"language":"M","rating":5.0,"percentage":0.0}
-{"language":"MQL5","rating":5.0,"percentage":0.0}
-{"language":"MoonScript","rating":5.0,"percentage":0.0}
-{"language":"Red","rating":5.0,"percentage":0.0}
-{"language":"XProc","rating":5.0,"percentage":0.0}
-{"language":"Alloy","rating":4.0,"percentage":0.0}
-{"language":"ApacheConf","rating":4.0,"percentage":0.0}
-{"language":"AppleScript","rating":4.0,"percentage":0.0}
+{"language":"Forth","rating":5.0,"percentage":0.0}
+{"language":"Haml","rating":5.0,"percentage":0.0}
+{"language":"ObjectScript","rating":5.0,"percentage":0.0}
+{"language":"PureBasic","rating":5.0,"percentage":0.0}
+{"language":"RPGLE","rating":5.0,"percentage":0.0}
+{"language":"Riot","rating":5.0,"percentage":0.0}
+{"language":"SWIG","rating":5.0,"percentage":0.0}
+{"language":"SaltStack","rating":5.0,"percentage":0.0}
+{"language":"Stata","rating":5.0,"percentage":0.0}
+{"language":"Vyper","rating":5.0,"percentage":0.0}
+{"language":"ZAP","rating":5.0,"percentage":0.0}
+{"language":"BASIC","rating":4.0,"percentage":0.0}
 {"language":"BlitzMax","rating":4.0,"percentage":0.0}
-{"language":"Boogie","rating":4.0,"percentage":0.0}
-{"language":"Component Pascal","rating":4.0,"percentage":0.0}
-{"language":"Curry","rating":4.0,"percentage":0.0}
-{"language":"Git Attributes","rating":4.0,"percentage":0.0}
-{"language":"Hy","rating":4.0,"percentage":0.0}
-{"language":"Inform 7","rating":4.0,"percentage":0.0}
-{"language":"Mako","rating":4.0,"percentage":0.0}
-{"language":"Objective-J","rating":4.0,"percentage":0.0}
-{"language":"Pan","rating":4.0,"percentage":0.0}
-{"language":"Procfile","rating":4.0,"percentage":0.0}
-{"language":"Slint","rating":4.0,"percentage":0.0}
-{"language":"TLA","rating":4.0,"percentage":0.0}
-{"language":"Valve Data Format","rating":4.0,"percentage":0.0}
-{"language":"Arc","rating":3.0,"percentage":0.0}
-{"language":"CLIPS","rating":3.0,"percentage":0.0}
-{"language":"CWeb","rating":3.0,"percentage":0.0}
+{"language":"BrighterScript","rating":4.0,"percentage":0.0}
+{"language":"DataWeave","rating":4.0,"percentage":0.0}
+{"language":"DenizenScript","rating":4.0,"percentage":0.0}
+{"language":"Macaulay2","rating":4.0,"percentage":0.0}
+{"language":"Modula-3","rating":4.0,"percentage":0.0}
+{"language":"OpenQASM","rating":4.0,"percentage":0.0}
+{"language":"PDDL","rating":4.0,"percentage":0.0}
+{"language":"PowerBuilder","rating":4.0,"percentage":0.0}
+{"language":"REXX","rating":4.0,"percentage":0.0}
+{"language":"Rebol","rating":4.0,"percentage":0.0}
+{"language":"SQL","rating":4.0,"percentage":0.0}
+{"language":"Yacc","rating":4.0,"percentage":0.0}
+{"language":"ApacheConf","rating":3.0,"percentage":0.0}
+{"language":"CartoCSS","rating":3.0,"percentage":0.0}
 {"language":"Cool","rating":3.0,"percentage":0.0}
-{"language":"Csound Document","rating":3.0,"percentage":0.0}
-{"language":"D2","rating":3.0,"percentage":0.0}
-{"language":"FreeBasic","rating":3.0,"percentage":0.0}
-{"language":"Hosts File","rating":3.0,"percentage":0.0}
-{"language":"Ink","rating":3.0,"percentage":0.0}
-{"language":"MQL4","rating":3.0,"percentage":0.0}
-{"language":"Singularity","rating":3.0,"percentage":0.0}
-{"language":"TXL","rating":3.0,"percentage":0.0}
-{"language":"VimL","rating":3.0,"percentage":0.0}
-{"language":"Wren","rating":3.0,"percentage":0.0}
-{"language":"kvlang","rating":3.0,"percentage":0.0}
+{"language":"Fennel","rating":3.0,"percentage":0.0}
+{"language":"Io","rating":3.0,"percentage":0.0}
+{"language":"NSIS","rating":3.0,"percentage":0.0}
+{"language":"Papyrus","rating":3.0,"percentage":0.0}
+{"language":"Slim","rating":3.0,"percentage":0.0}
+{"language":"VCL","rating":3.0,"percentage":0.0}
+{"language":"sed","rating":3.0,"percentage":0.0}
+{"language":"xBase","rating":3.0,"percentage":0.0}
 {"language":"ATS","rating":2.0,"percentage":0.0}
-{"language":"B4X","rating":2.0,"percentage":0.0}
-{"language":"Beef","rating":2.0,"percentage":0.0}
-{"language":"CSV","rating":2.0,"percentage":0.0}
-{"language":"Charity","rating":2.0,"percentage":0.0}
-{"language":"Dafny","rating":2.0,"percentage":0.0}
-{"language":"Dune","rating":2.0,"percentage":0.0}
-{"language":"E","rating":2.0,"percentage":0.0}
-{"language":"EdgeQL","rating":2.0,"percentage":0.0}
+{"language":"DIGITAL Command Language","rating":2.0,"percentage":0.0}
 {"language":"Eiffel","rating":2.0,"percentage":0.0}
-{"language":"Elvish","rating":2.0,"percentage":0.0}
 {"language":"FIRRTL","rating":2.0,"percentage":0.0}
-{"language":"FLUX","rating":2.0,"percentage":0.0}
-{"language":"GAML","rating":2.0,"percentage":0.0}
-{"language":"Grace","rating":2.0,"percentage":0.0}
-{"language":"Jasmin","rating":2.0,"percentage":0.0}
-{"language":"KakouneScript","rating":2.0,"percentage":0.0}
-{"language":"KiCad Layout","rating":2.0,"percentage":0.0}
-{"language":"LFE","rating":2.0,"percentage":0.0}
-{"language":"Lasso","rating":2.0,"percentage":0.0}
-{"language":"LiveScript","rating":2.0,"percentage":0.0}
-{"language":"MTML","rating":2.0,"percentage":0.0}
-{"language":"Mercury","rating":2.0,"percentage":0.0}
-{"language":"Module Management System","rating":2.0,"percentage":0.0}
-{"language":"NASL","rating":2.0,"percentage":0.0}
-{"language":"POV-Ray SDL","rating":2.0,"percentage":0.0}
-{"language":"Portugol","rating":2.0,"percentage":0.0}
+{"language":"FreeBASIC","rating":2.0,"percentage":0.0}
+{"language":"HyPhy","rating":2.0,"percentage":0.0}
+{"language":"Pony","rating":2.0,"percentage":0.0}
 {"language":"Protocol Buffer","rating":2.0,"percentage":0.0}
-{"language":"Ragel","rating":2.0,"percentage":0.0}
-{"language":"Rascal","rating":2.0,"percentage":0.0}
-{"language":"Smali","rating":2.0,"percentage":0.0}
-{"language":"StringTemplate","rating":2.0,"percentage":0.0}
-{"language":"TOML","rating":2.0,"percentage":0.0}
+{"language":"Red","rating":2.0,"percentage":0.0}
+{"language":"RenderScript","rating":2.0,"percentage":0.0}
+{"language":"RouterOS Script","rating":2.0,"percentage":0.0}
 {"language":"Terra","rating":2.0,"percentage":0.0}
-{"language":"Uno","rating":2.0,"percentage":0.0}
-{"language":"Visual Basic","rating":2.0,"percentage":0.0}
-{"language":"Web Ontology Language","rating":2.0,"percentage":0.0}
-{"language":"Wollok","rating":2.0,"percentage":0.0}
-{"language":"XS","rating":2.0,"percentage":0.0}
-{"language":"Xojo","rating":2.0,"percentage":0.0}
-{"language":"mupad","rating":2.0,"percentage":0.0}
-{"language":"ABAP CDS","rating":1.0,"percentage":0.0}
-{"language":"Arduino","rating":1.0,"percentage":0.0}
-{"language":"Asymptote","rating":1.0,"percentage":0.0}
-{"language":"Augeas","rating":1.0,"percentage":0.0}
-{"language":"ChucK","rating":1.0,"percentage":0.0}
-{"language":"Csound","rating":1.0,"percentage":0.0}
-{"language":"Cycript","rating":1.0,"percentage":0.0}
-{"language":"ECL","rating":1.0,"percentage":0.0}
-{"language":"EmberScript","rating":1.0,"percentage":0.0}
-{"language":"Faust","rating":1.0,"percentage":0.0}
-{"language":"GDB","rating":1.0,"percentage":0.0}
+{"language":"VimL","rating":2.0,"percentage":0.0}
+{"language":"XC","rating":2.0,"percentage":0.0}
+{"language":"Brightscript","rating":1.0,"percentage":0.0}
+{"language":"Clarity","rating":1.0,"percentage":0.0}
+{"language":"Common Workflow Language","rating":1.0,"percentage":0.0}
+{"language":"Component Pascal","rating":1.0,"percentage":0.0}
+{"language":"IDL","rating":1.0,"percentage":0.0}
 {"language":"IGOR Pro","rating":1.0,"percentage":0.0}
-{"language":"Imba","rating":1.0,"percentage":0.0}
-{"language":"J","rating":1.0,"percentage":0.0}
-{"language":"JCL","rating":1.0,"percentage":0.0}
-{"language":"Janet","rating":1.0,"percentage":0.0}
-{"language":"KerboScript","rating":1.0,"percentage":0.0}
-{"language":"Kit","rating":1.0,"percentage":0.0}
-{"language":"NMODL","rating":1.0,"percentage":0.0}
-{"language":"Oberon","rating":1.0,"percentage":0.0}
-{"language":"Org","rating":1.0,"percentage":0.0}
-{"language":"P4","rating":1.0,"percentage":0.0}
+{"language":"LSL","rating":1.0,"percentage":0.0}
+{"language":"MQL5","rating":1.0,"percentage":0.0}
+{"language":"Max","rating":1.0,"percentage":0.0}
 {"language":"PEG.js","rating":1.0,"percentage":0.0}
-{"language":"Pact","rating":1.0,"percentage":0.0}
-{"language":"Parrot","rating":1.0,"percentage":0.0}
-{"language":"Perl6","rating":1.0,"percentage":0.0}
-{"language":"Polar","rating":1.0,"percentage":0.0}
-{"language":"Public Key","rating":1.0,"percentage":0.0}
-{"language":"Q#","rating":1.0,"percentage":0.0}
-{"language":"QuickBASIC","rating":1.0,"percentage":0.0}
-{"language":"Rouge","rating":1.0,"percentage":0.0}
-{"language":"SQLPL","rating":1.0,"percentage":0.0}
-{"language":"SugarSS","rating":1.0,"percentage":0.0}
-{"language":"Turing","rating":1.0,"percentage":0.0}
-{"language":"UrWeb","rating":1.0,"percentage":0.0}
-{"language":"WGSL","rating":1.0,"percentage":0.0}
-{"language":"WebIDL","rating":1.0,"percentage":0.0}
-{"language":"Witcher Script","rating":1.0,"percentage":0.0}
-{"language":"Xonsh","rating":1.0,"percentage":0.0}
-{"language":"wdl","rating":1.0,"percentage":0.0}
+{"language":"Pawn","rating":1.0,"percentage":0.0}
+{"language":"Scilab","rating":1.0,"percentage":0.0}
+{"language":"TLA","rating":1.0,"percentage":0.0}
+{"language":"Thrift","rating":1.0,"percentage":0.0}
+{"language":"Toit","rating":1.0,"percentage":0.0}

@@ -43,6 +43,20 @@ struct Args {
     #[arg(long, default_value_t = 10_000)]
     repo_issue_limit: u64,
 
+    /// Drop repos whose total event count for the month is below this
+    /// threshold.  Trims the long tail of low-activity repos that contribute
+    /// negligibly to any rating and dominate the language-loader's GraphQL
+    /// fetch volume.
+    ///
+    /// Counts are summed across all actors and event types for each repo.
+    /// A repo must accumulate at least this many events in the month to be
+    /// retained.  Default 10: a single-digit event count is a weak signal
+    /// for a repo's true language makeup, and these repos make up the
+    /// overwhelming majority of the dataset while contributing little to
+    /// the ratings.
+    #[arg(long, default_value_t = 10)]
+    repo_min_events: u64,
+
     /// Full path for the filtered output file.
     #[arg(long)]
     output: PathBuf,
@@ -79,6 +93,7 @@ fn run(args: Args) -> Result<()> {
     let rows = filter_fork_only_actors(rows);
     let rows = filter_high_volume_issue_repos(rows, args.repo_issue_limit);
     let rows = filter_issue_only_actors(rows);
+    let rows = filter_low_activity_repos(rows, args.repo_min_events);
 
     let surviving = rows.len();
     let removed_pct = if total == 0 {
@@ -394,6 +409,42 @@ fn filter_single_event_repos(rows: Vec<Row>) -> Vec<Row> {
     rows
 }
 
+/// Drops rows belonging to repos whose total event count for the month
+/// (summed across all actors and event types) is strictly less than
+/// `min_events`.
+///
+/// This trims the long tail of low-activity repos that contribute negligibly
+/// to any rating while dominating the language-loader's GraphQL fetch
+/// volume.  A single-digit monthly event count is a weak signal for a
+/// repo's true language makeup, and these repos make up the overwhelming
+/// majority of the dataset.
+///
+/// Generalises `filter_single_event_repos` (which keeps repos with >1
+/// event).  With the default `min_events = 10` that earlier filter becomes
+/// a strict subset, so both are kept in the chain — `filter_single_event_repos`
+/// still does useful work when `--repo-min-events` is lowered to 1 or 2.
+fn filter_low_activity_repos(rows: Vec<Row>, min_events: u64) -> Vec<Row> {
+    let before = rows.len();
+
+    let mut repo_totals: HashMap<String, u64> = HashMap::new();
+    for r in &rows {
+        *repo_totals.entry(r.repo.clone()).or_insert(0) += r.count;
+    }
+
+    let rows: Vec<Row> = rows
+        .into_iter()
+        .filter(|r| repo_totals[&r.repo] >= min_events)
+        .collect();
+
+    log_filter(
+        "filter_low_activity_repos",
+        before,
+        rows.len(),
+        &format!("min_events={min_events}"),
+    );
+    rows
+}
+
 // ── Logging helper ────────────────────────────────────────────────────────────
 
 fn log_filter(name: &str, before: usize, after: usize, note: &str) {
@@ -653,6 +704,61 @@ mod tests {
         );
     }
 
+    // ── filter_low_activity_repos ─────────────────────────────────────────────
+
+    #[test]
+    fn test_low_activity_repos_drops_below_threshold() {
+        let rows = vec![
+            row("a", "big/repo", "PushEvent", 50), // total=50, kept
+            row("a", "edge/repo", "PushEvent", 9), // total=9, dropped (< 10)
+            row("a", "tiny/repo", "PushEvent", 1), // total=1, dropped
+        ];
+        let result = filter_low_activity_repos(rows, 10);
+        assert_eq!(repos(&result), vec!["big/repo"]);
+    }
+
+    #[test]
+    fn test_low_activity_repos_sums_across_rows() {
+        // edge/repo has two rows summing to 10 → kept (>= threshold).
+        let rows = vec![
+            row("a", "edge/repo", "PushEvent", 4),
+            row("b", "edge/repo", "PushEvent", 6),
+            row("a", "big/repo", "PushEvent", 100),
+        ];
+        let result = filter_low_activity_repos(rows, 10);
+        assert_eq!(repos(&result), vec!["edge/repo", "edge/repo", "big/repo"]);
+    }
+
+    #[test]
+    fn test_low_activity_repos_keeps_at_boundary() {
+        let rows = vec![row("a", "exact/repo", "PushEvent", 10)];
+        let result = filter_low_activity_repos(rows, 10);
+        assert_eq!(repos(&result), vec!["exact/repo"]);
+    }
+
+    #[test]
+    fn test_low_activity_repos_threshold_one_keeps_everything_with_events() {
+        let rows = vec![
+            row("a", "one/repo", "PushEvent", 1),
+            row("a", "two/repo", "PushEvent", 2),
+        ];
+        let result = filter_low_activity_repos(rows, 1);
+        assert_eq!(repos(&result), vec!["one/repo", "two/repo"]);
+    }
+
+    #[test]
+    fn test_low_activity_repos_zero_drops_everything() {
+        let rows = vec![
+            row("a", "any/repo", "PushEvent", 5),
+            row("a", "other/repo", "PushEvent", 100),
+        ];
+        let result = filter_low_activity_repos(rows, 0);
+        // threshold 0: keep repos with >= 0 events.  But a repo with 0 events
+        // can't appear in the dataset (every row has count >= 1), so this
+        // is effectively a no-op that keeps all rows.
+        assert_eq!(repos(&result), vec!["any/repo", "other/repo"]);
+    }
+
     // ── end-to-end via run() ──────────────────────────────────────────────────
 
     #[test]
@@ -680,6 +786,7 @@ eve,spam/repo,PushEvent,,,1
             output: dir.join("archive-202401-filtered.csv"),
             actor_event_limit: 1_000,
             repo_issue_limit: 10_000,
+            repo_min_events: 10,
         })?;
 
         assert_eq!(

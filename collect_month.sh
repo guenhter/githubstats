@@ -62,6 +62,25 @@ else
   echo "[$(date -Iseconds)] Step 1 done → $ARCHIVE_OUT"
 fi
 
+# ── Step 1b: filter (bot/noise removal + low-activity tail trim) ───────────
+# Produces the filtered CSV that Step 2 reads from.  --repo-min-events 50
+# drops the long tail of repos with fewer than 50 monthly events, which
+# contribute negligibly to the ratings but dominate the language-loader's
+# GraphQL fetch volume (the binding constraint under GitHub's secondary
+# rate limit).
+FILTERED_OUT="data/archive-${YEAR}${MONTH}-filtered.csv"
+
+if [[ -f "$FILTERED_OUT" ]]; then
+  echo "[$(date -Iseconds)] Step 1b skipped — $FILTERED_OUT already exists"
+else
+  echo "[$(date -Iseconds)] Step 1b — filtering $ARCHIVE_OUT"
+  "${DOCKER_RUN[@]}" filter_archive -- \
+    --input  "$ARCHIVE_OUT" \
+    --output "$FILTERED_OUT" \
+    --repo-min-events 50
+  echo "[$(date -Iseconds)] Step 1b done → $FILTERED_OUT"
+fi
+
 # ── Step 2: GitHub language loader (resumable) ────────────────────────────
 # If a previous run was interrupted, the partial languages-YYYY-MM.jsonl is
 # kept and only the repos not yet present in it are fetched again; new results
@@ -78,7 +97,10 @@ else
 fi
 
 # Full slug list for the month, minus the already-done set → still pending.
-awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' "$ARCHIVE_OUT" | sort -u \
+# Reads from the *filtered* CSV so only repos that survived the filter chain
+# (including the --repo-min-events 50 tail trim) are fetched.  This keeps the
+# language-loader's GraphQL fetch volume within GitHub's rate-limit ceiling.
+awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' "$FILTERED_OUT" | sort -u \
   | comm -23 - "$DONE_REPOS" > "$PENDING"
 
 PENDING_COUNT=$(wc -l < "$PENDING")

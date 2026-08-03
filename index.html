@@ -567,8 +567,63 @@
   <p>
     Activity data is sourced from <a href="https://www.gharchive.org/" target="_blank" rel="noopener">GH Archive</a>,
     which records every public GitHub event. Events are aggregated monthly and filtered to remove
-    bots, CI actors, single-event repositories, and deleted repositories.
+    noise and low-signal activity. Only repositories with at least 50 events in a given month
+    are retained; this trims the long tail of one-off repositories that contribute negligibly to
+    the ratings while keeping the cost of resolving language breakdowns via the GitHub API tractable.
   </p>
+
+  <h3>Filtering</h3>
+  <p>
+    Each month's raw events are passed through a filter chain before language ratings are computed.
+    The filters, applied in order, are:
+  </p>
+  <ul>
+    <li>
+      <strong>Empty repositories</strong> — repos with no <code>PushEvent</code> or
+      <code>PullRequestEvent</code> are dropped; they carry no language signal.
+    </li>
+    <li>
+      <strong>Bots</strong> — actors whose name contains "bot" (case-insensitive) are removed,
+      catching <code>dependabot</code>, <code>github-actions[bot]</code>, <code>renovate</code>, etc.
+    </li>
+    <li>
+      <strong>CI / automation actors</strong> — known automation tools that don't contain "bot"
+      in their name (<code>github-actions</code>, <code>codecov</code>, <code>snyk</code>,
+      <code>netlify</code>, <code>copilot</code>, …) are removed.
+    </li>
+    <li>
+      <strong>Single-event repositories</strong> — repos with exactly one event in the month are
+      dropped; a single event is too weak a signal for a repo's language makeup.
+    </li>
+    <li>
+      <strong>High-volume actors</strong> — actors with more than 1 000 total events in the month
+      are dropped; these are typically CI pipelines or mirror scripts, not real developers.
+    </li>
+    <li>
+      <strong>Deleted repositories</strong> — repos whose owner or name is a 40-character hex SHA
+      or UUID placeholder (left behind when a GitHub account is deleted) are removed.
+    </li>
+    <li>
+      <strong>Fork / watch-only actors</strong> — actors whose entire activity is exclusively
+      <code>ForkEvent</code> and/or <code>WatchEvent</code> are dropped; they never contributed code.
+    </li>
+    <li>
+      <strong>High-volume issue repositories</strong> — <code>IssuesEvent</code> rows for repos
+      with more than 10 000 issues in the month are dropped to defuse coordinated issue-flooding
+      campaigns; push and PR rows for the same repo are kept.
+    </li>
+    <li>
+      <strong>Issue-only actors</strong> — actors who file issues but have no
+      <code>PushEvent</code> or <code>PullRequestEvent</code> anywhere in the month are dropped
+      from the issue count; they add noise without reflecting developer activity.
+    </li>
+    <li>
+      <strong>Low-activity repositories</strong> — repos with fewer than 50 total events in the
+      month are dropped as the final step. This is the main lever that brings the language
+      resolution within GitHub's API rate limits and removes the long tail of repos that
+      contribute negligibly to any rating.
+    </li>
+  </ul>
 
   <h3>Language attribution</h3>
   <p>
