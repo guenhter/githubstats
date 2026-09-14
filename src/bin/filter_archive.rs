@@ -4,9 +4,12 @@
 //! a configurable chain of filters, and writes the surviving rows to a new CSV
 //! file.
 //!
-//! The filter chain in `main` is intentional: each step is a plain function
-//! call so the sequence is immediately readable without digging into flags or
-//! configuration.
+//! Filters are independent: each is a `Vec<Row> → Vec<Row>` function that
+//! sees the original row set and returns only the rows it keeps. `run`
+//! intersects those survivor sets into a `HashSet` and writes a row only
+//! if every filter kept it. Aggregate filters (actor totals, repo totals,
+//! …) are therefore computed against the unfiltered input, not a partially
+//! filtered remainder.
 //!
 //! Usage:
 //!   filter_archive --input archive-202605.csv --output archive-202605-filtered.csv
@@ -64,6 +67,7 @@ struct Args {
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct Row {
     actor: String,
     repo: String,
@@ -73,6 +77,12 @@ struct Row {
     count: u64,
 }
 
+/// Intersect `survived` with the rows returned by one filter.
+fn intersect(survived: &mut HashSet<Row>, kept: Vec<Row>) {
+    let kept: HashSet<Row> = kept.into_iter().collect();
+    survived.retain(|r| kept.contains(r));
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -80,21 +90,32 @@ fn main() -> Result<()> {
 }
 
 fn run(args: Args) -> Result<()> {
-    let rows = read_csv(&args.input)?;
-    let total = rows.len();
+    let all = read_csv(&args.input)?;
+    let total = all.len();
     eprintln!("  [read]                         {:>8} rows", total);
 
-    let rows = filter_empty_repos(rows);
-    let rows = filter_bots(rows);
-    let rows = filter_ci_actors(rows);
-    let rows = filter_single_event_repos(rows);
-    let rows = filter_high_volume_actors(rows, args.actor_event_limit);
-    let rows = filter_deleted_repos(rows);
-    let rows = filter_fork_only_actors(rows);
-    let rows = filter_high_volume_issue_repos(rows, args.repo_issue_limit);
-    let rows = filter_issue_only_actors(rows);
-    let rows = filter_low_activity_repos(rows, args.repo_min_events);
+    let mut survived: HashSet<Row> = all.iter().cloned().collect();
+    intersect(&mut survived, filter_empty_repos(all.clone()));
+    intersect(&mut survived, filter_bots(all.clone()));
+    intersect(&mut survived, filter_ci_actors(all.clone()));
+    intersect(&mut survived, filter_single_event_repos(all.clone()));
+    intersect(
+        &mut survived,
+        filter_high_volume_actors(all.clone(), args.actor_event_limit),
+    );
+    intersect(&mut survived, filter_deleted_repos(all.clone()));
+    intersect(&mut survived, filter_fork_only_actors(all.clone()));
+    intersect(
+        &mut survived,
+        filter_high_volume_issue_repos(all.clone(), args.repo_issue_limit),
+    );
+    intersect(&mut survived, filter_issue_only_actors(all.clone()));
+    intersect(
+        &mut survived,
+        filter_low_activity_repos(all.clone(), args.repo_min_events),
+    );
 
+    let rows: Vec<Row> = all.into_iter().filter(|r| survived.contains(r)).collect();
     let surviving = rows.len();
     let removed_pct = if total == 0 {
         0.0
@@ -116,6 +137,9 @@ fn run(args: Args) -> Result<()> {
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
+//
+// Each filter is `Vec<Row> → Vec<Row>`: it receives the original row set and
+// returns only the rows it keeps. `run` intersects those results in a set.
 
 /// Drops rows where the actor name contains "bot" (case-insensitive).
 /// Drops rows where the actor name contains "bot" (case-insensitive).
@@ -796,6 +820,42 @@ alice,rust-lang/rust,PushEvent,,,5
 alice,rust-lang/rust,PullRequestEvent,opened,,3
 alice,rust-lang/rust,IssuesEvent,opened,,2
 bob,rust-lang/rust,PushEvent,,,2
+"#
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_filters_intersect_on_original_set() -> Result<()> {
+        // A repo whose only human activity is 1 push, plus 20 bot events.
+        // Sequential pipeline: bots dropped first, then low-activity would
+        // drop the remaining 1-event repo. Independent intersection:
+        // low-activity sees 21 events so keeps the human row; bots drop the
+        // bot row; only the human push is in every survivor set.
+        let tmp = tempfile::tempdir()?;
+        let dir = tmp.path();
+
+        std::fs::write(
+            dir.join("archive-202401.csv"),
+            r#"actor,repo,event_type,action,language,count
+alice,human/repo,PushEvent,,,1
+dependabot[bot],human/repo,PushEvent,,,20
+"#,
+        )?;
+
+        run(Args {
+            input: dir.join("archive-202401.csv"),
+            output: dir.join("archive-202401-filtered.csv"),
+            actor_event_limit: 1_000,
+            repo_issue_limit: 10_000,
+            repo_min_events: 10,
+        })?;
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("archive-202401-filtered.csv"))?,
+            r#"actor,repo,event_type,action,language,count
+alice,human/repo,PushEvent,,,1
 "#
         );
 
