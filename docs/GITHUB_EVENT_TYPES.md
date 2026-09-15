@@ -5,9 +5,9 @@ The archive CSV contains one row per unique `(actor, repo, event_type, action)` 
 
 | Event type | Used for |
 |---|---|
-| `PullRequestEvent` | `pr-count`, `developer-activity` |
+| `PullRequestEvent` | `pr-count`, `active-repos` |
 | `IssuesEvent` | `issue-count` |
-| `PushEvent` | `push-count` |
+| `PushEvent` | `push-count`, `active-repos` |
 | `WatchEvent` | `star-count` |
 
 Full list of event types that appear in GH Archive data:

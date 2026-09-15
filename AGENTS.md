@@ -55,7 +55,7 @@ githubstats/
 | Per-month rating (committed) | `data/language-ratings-YYYY-MM-<type>.jsonl` |
 | Combined all-months rating (committed) | `data/language-ratings-all-<type>.jsonl` |
 
-**Valid `<type>` values:** `pr-count`, `issue-count`, `push-count`, `developer-activity`, `active-repos`, `star-count`
+**Valid `<type>` values:** `pr-count`, `issue-count`, `push-count`, `active-repos`, `star-count`
 
 ### Build and Run Commands
 
@@ -81,7 +81,7 @@ Individual pipeline step examples are documented in `README.md`.
 
 **stderr for diagnostics, stdout for data (`github_language_loader`):** All progress output goes to `stderr`; all data output goes to `stdout` as clean JSONL. This enables shell piping and must be maintained for any binary that reads/writes data streams.
 
-**Sequential filter chain (`filter_archive`):** Each filter is a pure function `Vec<Row> → Vec<Row>` named `filter_<noun>`. The `main` function reads as a pipeline. Follow this pattern when adding new filters. Every filter must log a `[filter_name] N removed (X.X%), M remaining` line to stderr.
+**Independent filter intersection (`filter_archive`):** Each filter is a pure function `&[Row] → Vec<usize>` named `filter_<noun>` and always sees the original row set. `run` intersects survivor index sets into a `HashSet<usize>` with `intersect(&mut survived, filter_(&all))` and retains a row only if every filter kept it. Follow this pattern when adding new filters. Every filter must log a `[filter_name] N removed (X.X%), M remaining` line to stderr (counts are relative to the original set).
 
 **Retry with exponential back-off:** Both HTTP clients implement manual retry (no middleware). New HTTP calls should follow the same pattern.
 

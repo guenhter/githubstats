@@ -504,8 +504,7 @@
   <div class="controls-row">
     <label for="metric">Metric</label>
     <select id="metric">
-      <option value="developer-activity" selected>Developer activity</option>
-      <option value="pr-count">Pull-request count</option>
+      <option value="pr-count" selected>Pull-request count</option>
       <option value="push-count">Push count</option>
       <option value="issue-count">Issue count</option>
       <option value="active-repos">Active repos</option>
@@ -653,11 +652,6 @@
   <h3>Rating formula</h3>
   <p>For each repository, the chosen event count is distributed across its languages:</p>
   <pre>rating[L] += event_count × (size_L / total_size)</pre>
-  <p>
-    The <em>developer-activity</em> metric uses distinct contributors — the union of
-    unique actors from <code>PushEvent</code> and <code>PullRequestEvent</code> — instead of
-    raw event count, making it neutral to per-developer commit-frequency habits.
-  </p>
 
   <h3>Alternative indexes</h3>
   <ul style="margin: 8px 0 8px 16px; line-height: 2;">
@@ -675,18 +669,17 @@
 <script>
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DATA_BASE = 'data/language-ratings-all-';
+const DATA_BASE = 'data/stats/language-ratings-all-';
 const CHART_LANGUAGES = 50;
 const CHART_DEFAULT_ACTIVE = 10;
 const TABLE_LANGUAGES = 100;
 
 const METRIC_DESC = {
-  'pr-count':           'Total pull-request actions per language per month.',
-  'developer-activity': 'Distinct developers (push + PR) per repo, counted once each.',
-  'push-count':         'Total push events per language per month.',
-  'issue-count':        'Total issue actions per language per month.',
-  'active-repos':       'Distinct active repos per language — each repo counts once regardless of event volume.',
-  'star-count':         'Total WatchEvents (stars) per language per month.',
+  'pr-count':     'Total pull-request actions per language per month.',
+  'push-count':   'Total push events per language per month.',
+  'issue-count':  'Total issue actions per language per month.',
+  'active-repos': 'Distinct active repos per language — each repo counts once regardless of event volume.',
+  'star-count':   'Total WatchEvents (stars) per language per month.',
 };
 
 // ── ECharts init ─────────────────────────────────────────────────────────────

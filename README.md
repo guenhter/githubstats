@@ -25,7 +25,7 @@ pack_statistics        →  language-ratings-all-<type>.jsonl  (one per statisti
 | Tool | Input | Output |
 |---|---|---|
 | `github_archive_loader` | GH Archive hourly `.json.gz` files (downloaded automatically) | **`archive-YYYYMM.csv`** (CSV)<br>Sample:<br>`actor,repo,event_type,action,language,count`<br>`torvalds,torvalds/linux,PushEvent,,,42`<br>`octocat,octocat/Hello-World,PullRequestEvent,opened,,3` |
-| `filter_archive` | archive CSV | **`archive-YYYYMM-filtered.csv`** (CSV)<br>same format as above, with bots, CI actors, single-event repos, etc. removed |
+| `filter_archive` | archive CSV | **`archive-YYYYMM-filtered.csv`** (CSV)<br>same format as above, with bots, CI actors, high-volume actors/push-repos, single-event repos, etc. removed |
 | `github_language_loader` | stdin — one `owner/repo` slug per line | **`languages-YYYY-MM.jsonl`** (JSONL)<br>Sample:<br>`{"repo":"torvalds/linux","total_size":1247804,"languages":[{"language":"C","size":1100000},{"language":"Shell","size":80000}],"fetched_at":"2026-08-02T17:54:00Z"}`<br>`{"repo":"octocat/Hello-World","total_size":1024,"languages":[{"language":"Ruby","size":1024}],"fetched_at":"2026-08-02T17:54:00Z"}` |
 | `produce_statistics` | filtered archive CSV + languages JSONL | **`language-ratings-YYYY-MM-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"language":"JavaScript","percentage":11.12,"rating":288414.50}` |
 | `pack_statistics` | per-month `language-ratings-YYYY-MM-<type>.jsonl` files | **`language-ratings-all-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"month":"2026-01","language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"month":"2026-01","language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"month":"2026-02","language":"TypeScript","percentage":21.87,"rating":568204.13}` |
@@ -87,7 +87,7 @@ cargo run --release --bin produce_statistics -- \
   --output-dir data/
 
 # Step 5 — pack all monthly ratings into combined files (run once after all months are produced)
-for TYPE in pr-count issue-count push-count developer-activity active-repos star-count; do
+for TYPE in pr-count issue-count push-count active-repos star-count; do
   cargo run --release --bin pack_statistics -- \
     --type "$TYPE" \
     --input-dir data/ \
@@ -104,7 +104,6 @@ done
 | `language-ratings-YYYY-MM-pr-count.jsonl` | Pull-request volume | `rating[L] += pr_count × (size_L / total_size)` |
 | `language-ratings-YYYY-MM-issue-count.jsonl` | Issue volume | `rating[L] += issue_count × (size_L / total_size)` |
 | `language-ratings-YYYY-MM-push-count.jsonl` | Push volume | `rating[L] += push_count × (size_L / total_size)` |
-| `language-ratings-YYYY-MM-developer-activity.jsonl` | Distinct contributors (PR + push) | `rating[L] += distinct_contributors × (size_L / total_size)` |
 | `language-ratings-YYYY-MM-active-repos.jsonl` | Active repository breadth | `rating[L] += 1 × (size_L / total_size)` per active repo |
 | `language-ratings-YYYY-MM-star-count.jsonl` | Stars (WatchEvents) | `rating[L] += star_count × (size_L / total_size)` |
 
@@ -120,7 +119,6 @@ Each record:
 | `language-ratings-all-pr-count.jsonl` | All months, pr-count, sorted chronologically |
 | `language-ratings-all-issue-count.jsonl` | All months, issue-count, sorted chronologically |
 | `language-ratings-all-push-count.jsonl` | All months, push-count, sorted chronologically |
-| `language-ratings-all-developer-activity.jsonl` | All months, developer-activity, sorted chronologically |
 | `language-ratings-all-active-repos.jsonl` | All months, active-repos, sorted chronologically |
 | `language-ratings-all-star-count.jsonl` | All months, star-count, sorted chronologically |
 
@@ -141,12 +139,6 @@ rating[L] += event_count × (size_L / total_size)
 
 Example: a repo with 2 PRs that is 70% TypeScript / 30% Python contributes
 **1.4** to TypeScript and **0.6** to Python.
-
-The `developer-activity` variant uses **distinct contributors** — the union of
-unique actors from `PullRequestEvent` and `PushEvent` — instead of raw event
-counts. This counts each person who actively committed to or reviewed a
-repository once, regardless of how often they pushed or opened PRs, making the
-metric neutral to per-developer commit-frequency habits.
 
 The `active-repos` variant contributes exactly **1 per repository** (regardless
 of event volume) to each of that repository's languages by byte share. This

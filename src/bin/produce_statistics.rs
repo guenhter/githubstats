@@ -8,26 +8,29 @@
 //!   language-ratings-YYYY-MM-pr-count.jsonl
 //!   language-ratings-YYYY-MM-issue-count.jsonl
 //!   language-ratings-YYYY-MM-push-count.jsonl
-//!   language-ratings-YYYY-MM-developer-activity.jsonl
 //!   language-ratings-YYYY-MM-active-repos.jsonl
 //!   language-ratings-YYYY-MM-star-count.jsonl
 //!
 //! Rating formula (all metric types):
 //!   For each repo, distribute the event count across all its languages
 //!   weighted by byte share.
-//!   pr-count:           rating[L] += pr_count            × (size_L / total_size)
-//!   issue-count:        rating[L] += issue_count         × (size_L / total_size)
-//!   push-count:         rating[L] += push_count          × (size_L / total_size)
-//!   developer-activity: rating[L] += distinct_contributors × (size_L / total_size)
-//!                       (distinct actors across PullRequestEvent + PushEvent)
-//!   active-repos:       rating[L] += 1                   × (size_L / total_size)
-//!                       (once per repo that had any PushEvent or PullRequestEvent)
-//!   star-count:         rating[L] += star_count           × (size_L / total_size)
+//!   pr-count:     rating[L] += pr_count    × (size_L / total_size)
+//!   issue-count:  rating[L] += issue_count × (size_L / total_size)
+//!   push-count:   rating[L] += push_count  × (size_L / total_size)
+//!   active-repos: rating[L] += 1           × (size_L / total_size)
+//!                 (once per repo that had any PushEvent or PullRequestEvent)
+//!   star-count:   rating[L] += star_count  × (size_L / total_size)
+//!
+//! Optional `--cap-single-actor-events`:
+//!   For repos with exactly one distinct actor across PushEvent + PullRequestEvent,
+//!   contribute at most 1 to pr-count and at most 1 to push-count.  Multi-actor
+//!   repos keep full volume.  active-repos / issues / stars are unchanged.
+//!   Blunts single-person push mills without dropping those repos.
 //!
 //! Event types read from the archive CSV:
-//!   PullRequestEvent → pr-count, developer-activity, and active-repos
+//!   PullRequestEvent → pr-count and active-repos
 //!   IssuesEvent      → issue-count
-//!   PushEvent        → push-count, developer-activity, and active-repos
+//!   PushEvent        → push-count and active-repos
 //!   WatchEvent       → star-count
 //!
 //! Input formats:
@@ -79,6 +82,11 @@ struct Args {
     /// Files are named: language-ratings-YYYY-MM-<type>.jsonl
     #[arg(long)]
     output_dir: PathBuf,
+
+    /// Cap pr-count and push-count at 1 for single-actor repos (exactly one
+    /// distinct actor across PushEvent + PullRequestEvent this month).
+    #[arg(long, default_value_t = false)]
+    cap_single_actor_events: bool,
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -101,6 +109,7 @@ struct RepoCounts {
     /// Total PullRequestEvent count per repo.
     pr_counts: HashMap<String, u64>,
     /// Distinct actors that generated a PullRequestEvent or PushEvent, per repo.
+    /// Used by `--cap-single-actor-events`, not as a published rating.
     dev_actors: HashMap<String, usize>,
     /// Total IssuesEvent count per repo.
     issue_counts: HashMap<String, u64>,
@@ -132,7 +141,11 @@ fn run(args: Args) -> Result<()> {
     eprintln!("  {} repos with language data", lang_map.len());
 
     eprintln!("Reading activity from {:?} …", args.archive);
-    let counts = collect_counts(&args.archive)?;
+    let mut counts = collect_counts(&args.archive)?;
+    if args.cap_single_actor_events {
+        let n = cap_single_actor_events(&mut counts);
+        eprintln!("  [cap_single_actor_events] capped push/PR to 1 on {n} single-actor repos");
+    }
     eprintln!(
         "  {} repos with PR activity, {} with issue activity, {} with push activity, {} active repos, {} with star activity",
         counts.pr_counts.len(),
@@ -166,21 +179,6 @@ fn run(args: Args) -> Result<()> {
     {
         let mut w = open_writer(&out)?;
         let ratings = compute_ratings(&counts.push_counts, &lang_map, "push");
-        write_ratings(&mut w, &ratings)?;
-    }
-
-    // ── developer-activity ───────────────────────────────────────────────────
-    let out = output_path(&args.output_dir, &year_month, "developer-activity");
-    eprintln!("Writing {out:?} …");
-    {
-        let mut w = open_writer(&out)?;
-        // Convert contributor counts to u64 map so we can reuse compute_ratings.
-        let dev_counts: HashMap<String, u64> = counts
-            .dev_actors
-            .iter()
-            .map(|(repo, n)| (repo.clone(), *n as u64))
-            .collect();
-        let ratings = compute_ratings(&dev_counts, &lang_map, "developer-activity");
         write_ratings(&mut w, &ratings)?;
     }
 
@@ -400,6 +398,34 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
     })
 }
 
+/// For repos with exactly one distinct actor (push + PR), set push-count and
+/// pr-count to at most 1.  Returns how many repos were capped.
+fn cap_single_actor_events(counts: &mut RepoCounts) -> usize {
+    let mut capped = 0usize;
+    for (repo, n_actors) in &counts.dev_actors {
+        if *n_actors != 1 {
+            continue;
+        }
+        let mut changed = false;
+        if let Some(c) = counts.push_counts.get_mut(repo)
+            && *c > 1
+        {
+            *c = 1;
+            changed = true;
+        }
+        if let Some(c) = counts.pr_counts.get_mut(repo)
+            && *c > 1
+        {
+            *c = 1;
+            changed = true;
+        }
+        if changed {
+            capped += 1;
+        }
+    }
+    capped
+}
+
 /// Compute language ratings from a map of per-repo event counts.
 ///
 /// For each repo, distributes the event count across all its languages
@@ -483,6 +509,7 @@ carol,golang/go,WatchEvent,,,10
             archive: dir.join("archive-202401-filtered.csv"),
             languages: dir.join("languages-2024-01.jsonl"),
             output_dir: dir.to_path_buf(),
+            cap_single_actor_events: false,
         })?;
 
         // ── pr-count ─────────────────────────────────────────────────────────
@@ -511,18 +538,6 @@ carol,golang/go,WatchEvent,,,10
             std::fs::read_to_string(dir.join("language-ratings-2024-01-issue-count.jsonl"))?,
             r#"{"language":"Rust","rating":1.8,"percentage":90.0}
 {"language":"C","rating":0.2,"percentage":10.0}
-"#
-        );
-
-        // ── developer-activity ───────────────────────────────────────────────
-        // rust-lang/rust: alice (PR) + bob (push) = 2 distinct devs → Rust 1.8, C 0.2.
-        // golang/go: alice (push) + carol (push) = 2 distinct devs → Go 2.0.
-        // Total = 4.0 → Go 50.0%, Rust 45.0%, C 5.0%
-        assert_eq!(
-            std::fs::read_to_string(dir.join("language-ratings-2024-01-developer-activity.jsonl"))?,
-            r#"{"language":"Go","rating":2.0,"percentage":50.0}
-{"language":"Rust","rating":1.8,"percentage":45.0}
-{"language":"C","rating":0.2,"percentage":5.0}
 "#
         );
 

@@ -19,7 +19,7 @@
 //! Records are written in chronological order (sorted by month), preserving the
 //! within-month ordering (descending by rating) from the source files.
 //!
-//! Statistic types: pr-count | issue-count | push-count | developer-activity | active-repos | star-count
+//! Statistic types: pr-count | issue-count | push-count | active-repos | star-count
 //!
 //! Usage:
 //!   pack_statistics --type pr-count
@@ -41,7 +41,7 @@ use std::path::{Path, PathBuf};
 )]
 struct Args {
     /// Statistic type to pack.
-    /// One of: pr-count, issue-count, push-count, developer-activity, active-repos, star-count
+    /// One of: pr-count, issue-count, push-count, active-repos, star-count
     #[arg(long, value_name = "TYPE")]
     r#type: String,
 
@@ -113,7 +113,6 @@ fn validate_type(t: &str) -> Result<()> {
         "pr-count",
         "issue-count",
         "push-count",
-        "developer-activity",
         "active-repos",
         "star-count",
     ];
