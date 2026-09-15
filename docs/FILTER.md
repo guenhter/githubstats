@@ -76,7 +76,7 @@ removes remaining push-mill volume from the ratings.
 filter_archive \
   --input  data/archives/archive-YYYYMM.csv \
   --output data/archives-filtered/archive-YYYYMM-filtered.csv
-  # defaults: --actor-event-limit 1000 --repo-push-limit 100 …
+  # defaults: --actor-event-limit 1000 --repo-push-limit 100 --repo-min-events 10 …
 
 produce_statistics \
   --archive data/archives-filtered/archive-YYYYMM-filtered.csv \

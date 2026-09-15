@@ -26,11 +26,11 @@ githubstats/
 │   ├── github_language_loader.rs  # Step 3: repo slugs → GitHub GraphQL → language JSONL
 │   ├── produce_statistics.rs      # Step 4: CSV + languages → 5 per-month rating files
 │   └── pack_statistics.rs         # Step 5: per-month files → 5 combined all-months files
-├── data/                       # All intermediate and final data (83 GB, partially gitignored)
-│   ├── archive-YYYYMM-filtered.csv           # Gitignored; ~0.1–1 GB each, 138 months
-│   ├── languages-YYYY-MM.jsonl               # Gitignored; repo → language breakdown per month
-│   ├── language-ratings-YYYY-MM-<type>.jsonl # Per-month ratings, one file per type/month
-│   └── language-ratings-all-<type>.jsonl     # Combined files consumed by the frontend
+├── data/                       # All intermediate and final data (large; partially gitignored)
+│   ├── archives/archive-YYYYMM.csv                      # Gitignored; raw monthly aggregates
+│   ├── archives-filtered/archive-YYYYMM-filtered.csv    # Gitignored; post-filter CSVs
+│   ├── languages/languages-YYYY-MM.jsonl                # Gitignored; repo → language breakdown
+│   └── stats/language-ratings-{YYYY-MM,all}-<type>.jsonl # Ratings consumed by the frontend
 ├── docs/                       # Reference docs and sample event payloads
 │   ├── GITHUB_EVENT_TYPES.md
 │   └── events/{2024,2026}/     # Sample pre/post API-change payloads
@@ -49,11 +49,11 @@ githubstats/
 
 | File | Pattern |
 |---|---|
-| Raw archive (gitignored) | `data/archive-YYYYMM.csv` |
-| Filtered archive (gitignored) | `data/archive-YYYYMM-filtered.csv` |
-| Language lookup (gitignored) | `data/languages-YYYY-MM.jsonl` |
-| Per-month rating (committed) | `data/language-ratings-YYYY-MM-<type>.jsonl` |
-| Combined all-months rating (committed) | `data/language-ratings-all-<type>.jsonl` |
+| Raw archive (gitignored) | `data/archives/archive-YYYYMM.csv` |
+| Filtered archive (gitignored) | `data/archives-filtered/archive-YYYYMM-filtered.csv` |
+| Language lookup (gitignored) | `data/languages/languages-YYYY-MM.jsonl` |
+| Per-month rating | `data/stats/language-ratings-YYYY-MM-<type>.jsonl` |
+| Combined all-months rating | `data/stats/language-ratings-all-<type>.jsonl` |
 
 **Valid `<type>` values:** `pr-count`, `issue-count`, `push-count`, `active-repos`, `star-count`
 

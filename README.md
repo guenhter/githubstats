@@ -10,25 +10,25 @@ and the GitHub GraphQL API, producing per-language weighted activity ratings for
 Five tools run in sequence to produce language-rating files for a month:
 
 ```
-github_archive_loader  →  archive-YYYYMM.csv
+github_archive_loader  →  data/archives/archive-YYYYMM.csv
         ↓
-filter_archive         →  archive-YYYYMM-filtered.csv
+filter_archive         →  data/archives-filtered/archive-YYYYMM-filtered.csv
         ↓
-github_language_loader →  languages-YYYY-MM.jsonl
+github_language_loader →  data/languages/languages-YYYY-MM.jsonl
         ↓
-produce_statistics     →  language-ratings-YYYY-MM-<type>.jsonl  (one per statistic type)
+produce_statistics     →  data/stats/language-ratings-YYYY-MM-<type>.jsonl
 
         ↓
-pack_statistics        →  language-ratings-all-<type>.jsonl  (one per statistic type)
+pack_statistics        →  data/stats/language-ratings-all-<type>.jsonl
 ```
 
 | Tool | Input | Output |
 |---|---|---|
-| `github_archive_loader` | GH Archive hourly `.json.gz` files (downloaded automatically) | **`archive-YYYYMM.csv`** (CSV)<br>Sample:<br>`actor,repo,event_type,action,language,count`<br>`torvalds,torvalds/linux,PushEvent,,,42`<br>`octocat,octocat/Hello-World,PullRequestEvent,opened,,3` |
-| `filter_archive` | archive CSV | **`archive-YYYYMM-filtered.csv`** (CSV)<br>same format as above, with bots, CI actors, high-volume actors/push-repos, single-event repos, etc. removed |
-| `github_language_loader` | stdin — one `owner/repo` slug per line | **`languages-YYYY-MM.jsonl`** (JSONL)<br>Sample:<br>`{"repo":"torvalds/linux","total_size":1247804,"languages":[{"language":"C","size":1100000},{"language":"Shell","size":80000}],"fetched_at":"2026-08-02T17:54:00Z"}`<br>`{"repo":"octocat/Hello-World","total_size":1024,"languages":[{"language":"Ruby","size":1024}],"fetched_at":"2026-08-02T17:54:00Z"}` |
-| `produce_statistics` | filtered archive CSV + languages JSONL | **`language-ratings-YYYY-MM-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"language":"JavaScript","percentage":11.12,"rating":288414.50}` |
-| `pack_statistics` | per-month `language-ratings-YYYY-MM-<type>.jsonl` files | **`language-ratings-all-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"month":"2026-01","language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"month":"2026-01","language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"month":"2026-02","language":"TypeScript","percentage":21.87,"rating":568204.13}` |
+| `github_archive_loader` | GH Archive hourly `.json.gz` files (downloaded automatically) | **`data/archives/archive-YYYYMM.csv`** (CSV)<br>Sample:<br>`actor,repo,event_type,action,language,count`<br>`torvalds,torvalds/linux,PushEvent,,,42`<br>`octocat,octocat/Hello-World,PullRequestEvent,opened,,3` |
+| `filter_archive` | archive CSV | **`data/archives-filtered/archive-YYYYMM-filtered.csv`** (CSV)<br>same format as above, with bots, CI actors, high-volume actors/push-repos, single-event repos, etc. removed |
+| `github_language_loader` | stdin — one `owner/repo` slug per line | **`data/languages/languages-YYYY-MM.jsonl`** (JSONL)<br>Sample:<br>`{"repo":"torvalds/linux","total_size":1247804,"languages":[{"language":"C","size":1100000},{"language":"Shell","size":80000}],"fetched_at":"2026-08-02T17:54:00Z"}`<br>`{"repo":"octocat/Hello-World","total_size":1024,"languages":[{"language":"Ruby","size":1024}],"fetched_at":"2026-08-02T17:54:00Z"}` |
+| `produce_statistics` | filtered archive CSV + languages JSONL | **`data/stats/language-ratings-YYYY-MM-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"language":"JavaScript","percentage":11.12,"rating":288414.50}` |
+| `pack_statistics` | per-month rating JSONL files | **`data/stats/language-ratings-all-<type>.jsonl`** (JSONL, one per statistic type)<br>Sample:<br>`{"month":"2026-01","language":"TypeScript","percentage":22.63,"rating":586871.81}`<br>`{"month":"2026-01","language":"Python","percentage":15.94,"rating":413407.79}`<br>`{"month":"2026-02","language":"TypeScript","percentage":21.87,"rating":568204.13}` |
 
 > **Required environment variable for `github_language_loader`:**
 > ```bash
@@ -48,14 +48,15 @@ cargo run --release --bin github_archive_loader -- \
   --year "$YEAR" \
   --month "$MONTH" \
   --parallelism 10 \
-  --output "data/archive-${YEAR}${MONTH}.csv"
+  --output "data/archives/archive-${YEAR}${MONTH}.csv"
 
 # Step 2 — filter out bots, CI actors, noise repos
+# Defaults: --actor-event-limit 1000 --repo-push-limit 100 --repo-min-events 10
 cargo run --release --bin filter_archive -- \
-  --input "data/archive-${YEAR}${MONTH}.csv" \
-  --output "data/archive-${YEAR}${MONTH}-filtered.csv"
+  --input "data/archives/archive-${YEAR}${MONTH}.csv" \
+  --output "data/archives-filtered/archive-${YEAR}${MONTH}-filtered.csv"
 
-# Step 3 — resolve language breakdown for repos with PR activity
+# Step 3 — resolve language breakdown for repos with PushEvent activity
 #
 # For archives up to and including September 2025 the GH Archive CSV already
 # contains a language column (field 5).  Extract it directly with awk — no
@@ -63,7 +64,7 @@ cargo run --release --bin filter_archive -- \
 #
 #   awk -F',' 'NR==1{next} $5==""{next} seen[$2]++{next} \
 #     {printf "{\"repo\":\"%s\",\"total_size\":1,\"languages\":[{\"language\":\"%s\",\"size\":1}]}\n", $2, $5}' \
-#     "data/archive-${YEAR}${MONTH}.csv" > "data/languages-${YEAR}-${MONTH}.jsonl"
+#     "data/archives/archive-${YEAR}${MONTH}.csv" > "data/languages/languages-${YEAR}-${MONTH}.jsonl"
 #
 # Note: use the unfiltered archive here so no repos are missed; the language
 # column reflects the first event seen for each repo in the raw archive.
@@ -76,22 +77,23 @@ cargo run --release --bin filter_archive -- \
 #   (extract unique repo slugs that had PushEvents, skip the header)
 export GITHUB_TOKEN=ghp_…
 awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' \
-    "data/archive-${YEAR}${MONTH}-filtered.csv" | sort -u \
+    "data/archives-filtered/archive-${YEAR}${MONTH}-filtered.csv" | sort -u \
   | cargo run --release --bin github_language_loader -- \
-  > "data/languages-${YEAR}-${MONTH}.jsonl"
+  > "data/languages/languages-${YEAR}-${MONTH}.jsonl"
 
 # Step 4 — compute weighted per-language ratings (one output file per statistic type)
 cargo run --release --bin produce_statistics -- \
-  --archive "data/archive-${YEAR}${MONTH}-filtered.csv" \
-  --languages "data/languages-${YEAR}-${MONTH}.jsonl" \
-  --output-dir data/
+  --archive "data/archives-filtered/archive-${YEAR}${MONTH}-filtered.csv" \
+  --languages "data/languages/languages-${YEAR}-${MONTH}.jsonl" \
+  --output-dir data/stats \
+  --cap-single-actor-events
 
 # Step 5 — pack all monthly ratings into combined files (run once after all months are produced)
 for TYPE in pr-count issue-count push-count active-repos star-count; do
   cargo run --release --bin pack_statistics -- \
     --type "$TYPE" \
-    --input-dir data/ \
-    --output-dir data/
+    --input-dir data/stats \
+    --output-dir data/stats
 done
 ```
 
@@ -191,10 +193,10 @@ There are two reasons this project downloads the raw `.json.gz` files directly i
 
 ## Experiment: proportional weighting vs primary-language-only
 
-`produce_statistics --primary-only` is an experimental mode that attributes
+An earlier experimental `produce_statistics --primary-only` mode attributed
 all of a repo's score to its single dominant (largest-by-bytes) language,
-ignoring secondary languages entirely.  Output filenames gain a `-primary`
-suffix (e.g. `language-ratings-2024-01-pr-count-primary.jsonl`).
+ignoring secondary languages entirely. That flag is no longer in the binary;
+the comparison below is kept as a historical result.
 
 ### What changes
 

@@ -571,7 +571,7 @@
   <p>
     Activity data is sourced from <a href="https://www.gharchive.org/" target="_blank" rel="noopener">GH Archive</a>,
     which records every public GitHub event. Events are aggregated monthly and filtered to remove
-    noise and low-signal activity. Only repositories with at least 50 events in a given month
+    noise and low-signal activity. Only repositories with at least 10 events in a given month
     are retained; this trims the long tail of one-off repositories that contribute negligibly to
     the ratings while keeping the cost of resolving language breakdowns via the GitHub API tractable.
   </p>
@@ -617,12 +617,17 @@
       campaigns; push and PR rows for the same repo are kept.
     </li>
     <li>
+      <strong>High-volume push repositories</strong> — <code>PushEvent</code> rows for repos with
+      more than 100 pushes in the month are dropped to blunt scraper / dashboard push mills;
+      PR, issue, and star rows for the same repo are kept.
+    </li>
+    <li>
       <strong>Issue-only actors</strong> — actors who file issues but have no
       <code>PushEvent</code> or <code>PullRequestEvent</code> anywhere in the month are dropped
       from the issue count; they add noise without reflecting developer activity.
     </li>
     <li>
-      <strong>Low-activity repositories</strong> — repos with fewer than 50 total events in the
+      <strong>Low-activity repositories</strong> — repos with fewer than 10 total events in the
       month are dropped as the final step. This is the main lever that brings the language
       resolution within GitHub's API rate limits and removes the long tail of repos that
       contribute negligibly to any rating.
