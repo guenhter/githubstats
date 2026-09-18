@@ -56,7 +56,7 @@ cargo run --release --bin filter_archive -- \
   --input "data/archives/archive-${YEAR}${MONTH}.csv" \
   --output "data/archives-filtered/archive-${YEAR}${MONTH}-filtered.csv"
 
-# Step 3 — resolve language breakdown for repos with PushEvent activity
+# Step 3 — resolve language breakdown for repos with any event type used by produce_statistics
 #
 # For archives up to and including September 2025 the GH Archive CSV already
 # contains a language column (field 5).  Extract it directly with awk — no
@@ -74,9 +74,9 @@ cargo run --release --bin filter_archive -- \
 # the GraphQL fallback below is required for those months.
 #   See: https://github.blog/changelog/2025-08-08-upcoming-changes-to-github-events-api-payloads/
 #
-#   (extract unique repo slugs that had PushEvents, skip the header)
+#   (extract unique repo slugs that had a counted event, skip the header)
 export GITHUB_TOKEN=ghp_…
-awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' \
+awk -F',' 'NR>1 && ($3 == "PullRequestEvent" || $3 == "IssuesEvent" || $3 == "PushEvent" || $3 == "WatchEvent") {print $2}' \
     "data/archives-filtered/archive-${YEAR}${MONTH}-filtered.csv" | sort -u \
   | cargo run --release --bin github_language_loader -- \
   > "data/languages/languages-${YEAR}-${MONTH}.jsonl"
