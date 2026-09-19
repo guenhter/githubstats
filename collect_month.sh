@@ -80,7 +80,7 @@ else
 fi
 
 # ── Step 2: filter (bot/noise removal + low-activity tail trim) ────────────
-# Defaults match docs/FILTER.md / the historical stats series
+# Defaults match filter_archive / the historical stats series
 # (--actor-event-limit 1000, --repo-push-limit 100, --repo-min-events 10).
 FILTERED_OUT="data/archives-filtered/archive-${YYYYMM}-filtered.csv"
 
@@ -114,7 +114,7 @@ fi
 # Reads from the *filtered* CSV so only repos that survived the filter chain
 # are fetched.  This keeps the language-loader's GraphQL fetch volume within
 # GitHub's rate-limit ceiling.
-awk -F',' 'NR>1 && $3=="PushEvent" {print $2}' "$FILTERED_OUT" | sort -u \
+awk -F',' 'NR>1 && ($3 == "PullRequestEvent" || $3 == "IssuesEvent" || $3 == "PushEvent" || $3 == "WatchEvent") {print $2}' "$FILTERED_OUT" | sort -u \
   | comm -23 - "$DONE_REPOS" > "$PENDING"
 
 PENDING_COUNT=$(wc -l < "$PENDING")

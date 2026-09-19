@@ -398,8 +398,10 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
     })
 }
 
-/// For repos with exactly one distinct actor (push + PR), set push-count and
-/// pr-count to at most 1.  Returns how many repos were capped.
+/// Scoring companion to `filter_archive`'s volume caps: for repos with exactly
+/// one distinct actor (push + PR), set push-count and pr-count to at most 1.
+/// Keeps the repos in the dataset but removes remaining push-mill volume from
+/// the ratings. Returns how many repos were capped.
 fn cap_single_actor_events(counts: &mut RepoCounts) -> usize {
     let mut capped = 0usize;
     for (repo, n_actors) in &counts.dev_actors {

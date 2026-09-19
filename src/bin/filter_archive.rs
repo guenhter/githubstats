@@ -11,6 +11,17 @@
 //! …) are therefore computed against the unfiltered input, not a partially
 //! filtered remainder.
 //!
+//! After the Oct 2025 GH Archive payload change, language attribution moved to
+//! GraphQL, so these filters matter more: volume/automation noise that used to
+//! be diluted by archive-side language fields now swings ratings directly.
+//! A continuity filter (require the repo in the previous two raw months) was
+//! tried and dropped — with bots + actor/push caps, ratings barely moved, while
+//! continuity discarded most repos and complicated GraphQL coverage.
+//!
+//! Scoring-time companion (not a filter here):
+//! `produce_statistics --cap-single-actor-events` caps pr/push volume on
+//! single-actor repos without dropping them from the archive.
+//!
 //! Usage:
 //!   filter_archive --input archive-202605.csv --output archive-202605-filtered.csv
 //!   filter_archive --input archive-202605.csv --output archive-202605-filtered.csv --actor-event-limit 500
@@ -37,7 +48,8 @@ struct Args {
     #[arg(long)]
     input: PathBuf,
 
-    /// Drop actors whose total event count exceeds this threshold
+    /// Drop actors whose total event count exceeds this threshold (default 1000).
+    /// Stops one scripted login from swinging monthly language shares.
     #[arg(long, default_value_t = 1_000)]
     actor_event_limit: u64,
 
@@ -159,9 +171,14 @@ fn run(args: Args) -> Result<()> {
 // Each filter is `&[Row] → Vec<usize>`: it receives the original row set and
 // returns the indices of rows it keeps. `run` intersects those index sets.
 
-/// Drops rows where the actor name contains "bot" (case-insensitive).
-/// Catches common patterns like `dependabot`, `github-actions[bot]`,
-/// `renovate[bot]`, `someproject-bot`, etc.
+/// Drops rows where the actor name contains `"bot"` (case-insensitive).
+///
+/// Catches `dependabot[bot]`, `github-actions[bot]`, `renovate[bot]`,
+/// `someproject-bot`, and similar. In 2021 Dependabot-style accounts opened
+/// millions of dependency-bump PRs, mostly on npm/JavaScript repos, and
+/// produced artificial JS spikes on PR and active-repo metrics. Named-bot
+/// filtering removes that class of automation; it does not catch human
+/// usernames that run scrapers or dashboards (no `"bot"` substring).
 fn filter_bots(rows: &[Row]) -> Vec<usize> {
     let before = rows.len();
     let kept: Vec<usize> = rows
@@ -216,10 +233,14 @@ fn filter_ci_actors(rows: &[Row]) -> Vec<usize> {
     kept
 }
 
-/// Drops all rows belonging to actors whose total event count (sum of the
-/// `count` column across all their rows) exceeds `limit`.
-/// These are typically CI systems, mirror scripts, or automated pipelines
-/// that are not real developer activity.
+/// Drops **all** rows from any actor whose total event `count` for the month
+/// exceeds `limit` (CLI default: 1000).
+///
+/// Mid–late 2026 HTML push-count spikes were driven by single human-looking
+/// accounts flooding HTML-only dashboards / scrapers / digests with thousands
+/// of pushes. Capping per-actor monthly volume stops one scripted login from
+/// swinging language shares. Also catches CI systems and mirror scripts that
+/// are not real developer activity.
 fn filter_high_volume_actors(rows: &[Row], limit: u64) -> Vec<usize> {
     let before = rows.len();
 
@@ -397,16 +418,14 @@ fn filter_high_volume_issue_repos(rows: &[Row], limit: u64) -> Vec<usize> {
     kept
 }
 
-/// Drops PushEvent rows from repos whose total PushEvent count exceeds `limit`.
+/// Drops **PushEvent** rows from any repo whose total PushEvent `count`
+/// exceeds `limit` (CLI default: 100). Other event types for that repo are
+/// kept — same shape as `filter_high_volume_issue_repos`.
 ///
-/// Complements `filter_high_volume_actors`: after the per-actor ceiling, many
-/// HTML dashboard / scraper / digest repos still push hundreds of times per
-/// month from a single human-looking account sitting just under the actor
-/// limit.  Capping per-repo push volume removes that class without needing
-/// language data at filter time.
-///
-/// Only PushEvent rows are removed — PR / issue / star rows for the same repo
-/// are left intact (same shape as `filter_high_volume_issue_repos`).
+/// Complements `filter_high_volume_actors`: after the per-actor ceiling, a
+/// swarm of near-cap single-actor HTML/scraper repos (100–1000 pushes/month)
+/// still inflated push-count. A per-repo push ceiling removes that class
+/// without needing language data at filter time.
 fn filter_high_volume_push_repos(rows: &[Row], limit: u64) -> Vec<usize> {
     let before = rows.len();
 
