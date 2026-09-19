@@ -4,12 +4,21 @@
 //! a configurable chain of filters, and writes the surviving rows to a new CSV
 //! file.
 //!
-//! Filters are independent: each is a `&[Row] → Vec<usize>` function that
-//! sees the original row set and returns the indices of rows it keeps. `run`
-//! intersects those survivor index sets into a `HashSet` and writes a row only
-//! if every filter kept it. Aggregate filters (actor totals, repo totals,
-//! …) are therefore computed against the unfiltered input, not a partially
-//! filtered remainder.
+//! Two phases:
+//!
+//! 1. **Independent filters** (volume caps, min events, bots, CI actors,
+//!    deleted-repo names, issue-only actors, …) each run over the *original*
+//!    row set as `&[&Row] → Vec<&Row>` (optional limit args). `run` intersects
+//!    those kept-ref sets (by row address) so aggregate limits are never
+//!    falsified by an earlier filter shrinking counts, and each filter’s log
+//!    is relative to the full input. Rows are never cloned.
+//! 2. **Sequential filters** (`filter_no_code_activity_repos`) share the same
+//!    `&[&Row] → Vec<&Row>` shape and run as
+//!    `rows = filter_no_code_activity_repos(&rows)` on the post-intersection
+//!    survivors, so they see remaining activity after independent cuts.
+//!
+//! Every `filter_*` takes `&[&Row]` (plus optional thresholds) and returns
+//! `Vec<&Row>` borrowed from the owned CSV buffer.
 //!
 //! After the Oct 2025 GH Archive payload change, language attribution moved to
 //! GraphQL, so these filters matter more: volume/automation noise that used to
@@ -50,15 +59,17 @@ struct Args {
     #[arg(long, default_value_t = 1_000)]
     actor_event_limit: u64,
 
-    /// Drop IssuesEvent rows for repos whose total IssuesEvent count exceeds
-    /// this threshold.  Catches coordinated issue-flooding campaigns where
-    /// many actors each stay below the per-actor limit.
+    /// Drop repos whose total IssuesEvent count exceeds this threshold.
+    /// Catches coordinated issue-flooding campaigns where many actors each
+    /// stay below the per-actor limit. All event types for the repo are
+    /// removed, not only issues.
     #[arg(long, default_value_t = 10_000)]
     repo_issue_limit: u64,
 
-    /// Drop PushEvent rows for repos whose total PushEvent count exceeds this
-    /// threshold.  Catches dashboard/scraper repos that sit under the
-    /// per-actor limit but still flood push-count ratings (often HTML-only).
+    /// Drop repos whose total PushEvent count exceeds this threshold.
+    /// Catches dashboard/scraper repos that sit under the per-actor limit but
+    /// still flood push-count ratings (often HTML-only). All event types for
+    /// the repo are removed, not only pushes.
     #[arg(long, default_value_t = 100)]
     repo_push_limit: u64,
 
@@ -93,10 +104,10 @@ struct Row {
     count: u64,
 }
 
-/// Intersect `survived` with the row indices kept by one filter.
-fn intersect(survived: &mut HashSet<usize>, kept: Vec<usize>) {
-    let kept: HashSet<usize> = kept.into_iter().collect();
-    survived.retain(|i| kept.contains(i));
+/// Intersect survivors with one filter’s kept refs (identity by address in `all`).
+fn intersect(survived: &mut HashSet<*const Row>, kept: Vec<&Row>) {
+    let kept: HashSet<*const Row> = kept.into_iter().map(|r| r as *const Row).collect();
+    survived.retain(|p| kept.contains(p));
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -110,39 +121,44 @@ fn run(args: Args) -> Result<()> {
     let total = all.len();
     eprintln!("  [read]                         {:>8} rows", total);
 
-    // Survive-set is row indices, not cloned rows: each filter still sees the
-    // original slice, but we never hold 4–5 full copies of the CSV in RAM.
-    let mut survived: HashSet<usize> = (0..total).collect();
-    intersect(&mut survived, filter_empty_repos(&all));
-    intersect(&mut survived, filter_bots(&all));
-    intersect(&mut survived, filter_ci_actors(&all));
-    intersect(&mut survived, filter_single_event_repos(&all));
+    // Cheap view of borrowed rows — filters never clone `Row` values.
+    let all_refs: Vec<&Row> = all.iter().collect();
+
+    // Phase 1 — independent filters on the original set.
+    let mut survived: HashSet<*const Row> = all_refs.iter().map(|r| *r as *const Row).collect();
+    intersect(&mut survived, filter_bots(&all_refs));
+    intersect(&mut survived, filter_ci_actors(&all_refs));
+    intersect(&mut survived, filter_deleted_repos(&all_refs));
+    intersect(&mut survived, filter_single_event_repos(&all_refs));
     intersect(
         &mut survived,
-        filter_high_volume_actors(&all, args.actor_event_limit),
-    );
-    intersect(&mut survived, filter_deleted_repos(&all));
-    intersect(&mut survived, filter_fork_only_actors(&all));
-    intersect(
-        &mut survived,
-        filter_high_volume_issue_repos(&all, args.repo_issue_limit),
+        filter_high_volume_actors(&all_refs, args.actor_event_limit),
     );
     intersect(
         &mut survived,
-        filter_high_volume_push_repos(&all, args.repo_push_limit),
+        filter_high_volume_issue_repos(&all_refs, args.repo_issue_limit),
     );
-    intersect(&mut survived, filter_issue_only_actors(&all));
     intersect(
         &mut survived,
-        filter_low_activity_repos(&all, args.repo_min_events),
+        filter_high_volume_push_repos(&all_refs, args.repo_push_limit),
+    );
+    intersect(&mut survived, filter_issue_only_actors(&all_refs));
+    intersect(&mut survived, filter_fork_only_actors(&all_refs));
+    intersect(
+        &mut survived,
+        filter_low_activity_repos(&all_refs, args.repo_min_events),
     );
 
-    let rows: Vec<Row> = all
+    // Rebuild in original order (HashSet iteration order is arbitrary).
+    let mut rows: Vec<&Row> = all_refs
         .into_iter()
-        .enumerate()
-        .filter(|(i, _)| survived.contains(i))
-        .map(|(_, r)| r)
+        .filter(|r| survived.contains(&(*r as *const Row)))
         .collect();
+    eprintln!("  [after_independent_filters]    {:>8} rows", rows.len());
+
+    // Phase 2 — drop leftovers with no Push/PR after independent cuts.
+    rows = filter_no_code_activity_repos(&rows);
+
     let surviving = rows.len();
     let removed_pct = if total == 0 {
         0.0
@@ -151,7 +167,7 @@ fn run(args: Args) -> Result<()> {
     };
 
     let output = &args.output;
-    write_csv(rows, output)?;
+    write_csv(&rows, output)?;
 
     eprintln!(
         "  [total]  {:>8} removed ({:.1}%),  {:>8} remaining",
@@ -165,8 +181,9 @@ fn run(args: Args) -> Result<()> {
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 //
-// Each filter is `&[Row] → Vec<usize>`: it receives the original row set and
-// returns the indices of rows it keeps. `run` intersects those index sets.
+// Every filter is `&[&Row] (+ optional threshold) → Vec<&Row>` (borrows from the
+// owned CSV buffer). Phase 1 intersects kept-ref sets over the original CSV.
+// Phase 2 chains as `rows = filter_*(&rows)`.
 
 /// Drops rows where the actor name contains `"bot"` (case-insensitive).
 ///
@@ -176,13 +193,12 @@ fn run(args: Args) -> Result<()> {
 /// produced artificial JS spikes on PR and active-repo metrics. Named-bot
 /// filtering removes that class of automation; it does not catch human
 /// usernames that run scrapers or dashboards (no `"bot"` substring).
-fn filter_bots(rows: &[Row]) -> Vec<usize> {
+fn filter_bots<'a>(rows: &[&'a Row]) -> Vec<&'a Row> {
     let before = rows.len();
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| !r.actor.to_ascii_lowercase().contains("bot"))
-        .map(|(i, _)| i)
+        .copied()
+        .filter(|r| !r.actor.to_ascii_lowercase().contains("bot"))
         .collect();
     log_filter("filter_bots", before, kept.len(), "");
     kept
@@ -194,7 +210,7 @@ fn filter_bots(rows: &[Row]) -> Vec<usize> {
 /// Matching is case-insensitive substring, so e.g. "github-actions" catches
 /// both `github-actions` and `github-actions[bot]` (the latter also caught by
 /// `filter_bots`, but the overlap is harmless).
-fn filter_ci_actors(rows: &[Row]) -> Vec<usize> {
+fn filter_ci_actors<'a>(rows: &[&'a Row]) -> Vec<&'a Row> {
     const CI_SUBSTRINGS: &[&str] = &[
         "github-actions",
         "dependabot",
@@ -217,14 +233,13 @@ fn filter_ci_actors(rows: &[Row]) -> Vec<usize> {
     ];
 
     let before = rows.len();
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| {
+        .copied()
+        .filter(|r| {
             let actor_lc = r.actor.to_ascii_lowercase();
             !CI_SUBSTRINGS.iter().any(|s| actor_lc.contains(s))
         })
-        .map(|(i, _)| i)
         .collect();
     log_filter("filter_ci_actors", before, kept.len(), "");
     kept
@@ -238,19 +253,18 @@ fn filter_ci_actors(rows: &[Row]) -> Vec<usize> {
 /// of pushes. Capping per-actor monthly volume stops one scripted login from
 /// swinging language shares. Also catches CI systems and mirror scripts that
 /// are not real developer activity.
-fn filter_high_volume_actors(rows: &[Row], limit: u64) -> Vec<usize> {
+fn filter_high_volume_actors<'a>(rows: &[&'a Row], limit: u64) -> Vec<&'a Row> {
     let before = rows.len();
 
     let mut actor_totals: HashMap<&str, u64> = HashMap::new();
     for r in rows {
-        *actor_totals.entry(&r.actor).or_insert(0) += r.count;
+        *actor_totals.entry(r.actor.as_str()).or_insert(0) += r.count;
     }
 
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| actor_totals[r.actor.as_str()] <= limit)
-        .map(|(i, _)| i)
+        .copied()
+        .filter(|r| actor_totals[r.actor.as_str()] <= limit)
         .collect();
 
     log_filter(
@@ -268,13 +282,12 @@ fn filter_high_volume_actors(rows: &[Row], limit: u64) -> Vec<usize> {
 /// a raw SHA-like or UUID-like slug internally. We detect:
 ///   - owner or repo-name segment that is a 40-character hex string (git SHA)
 ///   - owner or repo-name segment that matches a UUID (8-4-4-4-12 hex)
-fn filter_deleted_repos(rows: &[Row]) -> Vec<usize> {
+fn filter_deleted_repos<'a>(rows: &[&'a Row]) -> Vec<&'a Row> {
     let before = rows.len();
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| !looks_like_deleted_repo(&r.repo))
-        .map(|(i, _)| i)
+        .copied()
+        .filter(|r| !looks_like_deleted_repo(&r.repo))
         .collect();
     log_filter("filter_deleted_repos", before, kept.len(), "");
     kept
@@ -311,11 +324,11 @@ fn is_uuid_like(s: &str) -> bool {
 }
 
 /// Drops rows belonging to repos that have no PushEvent or PullRequestEvent
-/// anywhere in the dataset.
+/// in `rows`.
 ///
 /// Repos with only WatchEvents, ForkEvents, IssuesEvents, etc. and no code
 /// activity carry no language signal and are typically empty or archived repos.
-fn filter_empty_repos(rows: &[Row]) -> Vec<usize> {
+fn filter_no_code_activity_repos<'a>(rows: &[&'a Row]) -> Vec<&'a Row> {
     let before = rows.len();
 
     let active_repos: HashSet<&str> = rows
@@ -324,25 +337,24 @@ fn filter_empty_repos(rows: &[Row]) -> Vec<usize> {
         .map(|r| r.repo.as_str())
         .collect();
 
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| active_repos.contains(r.repo.as_str()))
-        .map(|(i, _)| i)
+        .copied()
+        .filter(|r| active_repos.contains(r.repo.as_str()))
         .collect();
 
-    log_filter("filter_empty_repos", before, kept.len(), "");
+    log_filter("filter_no_code_activity_repos", before, kept.len(), "");
     kept
 }
 
-/// Drops rows belonging to actors whose entire activity in the dataset is
+/// Drops rows belonging to actors whose entire activity in `rows` is
 /// exclusively ForkEvents and/or WatchEvents — they never pushed, opened a
 /// PR, filed an issue, or did anything else.
 ///
 /// ForkEvent-only actors are typically users who forked a repo out of
 /// curiosity and never touched it.  WatchEvent-only actors are users who
 /// starred a repo.  Neither carries any language signal.
-fn filter_fork_only_actors(rows: &[Row]) -> Vec<usize> {
+fn filter_fork_only_actors<'a>(rows: &[&'a Row]) -> Vec<&'a Row> {
     let before = rows.len();
 
     let actors_with_meaningful_activity: HashSet<&str> = rows
@@ -351,19 +363,18 @@ fn filter_fork_only_actors(rows: &[Row]) -> Vec<usize> {
         .map(|r| r.actor.as_str())
         .collect();
 
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| actors_with_meaningful_activity.contains(r.actor.as_str()))
-        .map(|(i, _)| i)
+        .copied()
+        .filter(|r| actors_with_meaningful_activity.contains(r.actor.as_str()))
         .collect();
 
     log_filter("filter_fork_only_actors", before, kept.len(), "");
     kept
 }
 
-/// Drops IssuesEvent rows belonging to repos whose total IssuesEvent count
-/// exceeds `limit`.
+/// Drops **all** rows for any repo whose total IssuesEvent `count` exceeds
+/// `limit` (CLI default: 10 000).
 ///
 /// This targets coordinated issue-flooding campaigns where a large number of
 /// actors each open a small number of issues against the same repo, keeping
@@ -373,37 +384,27 @@ fn filter_fork_only_actors(rows: &[Row]) -> Vec<usize> {
 /// users who each opened ~22 issues in a single day (386 k IssuesEvents
 /// total), causing an ~22× spike in Python's issue-count share for that month.
 ///
-/// Only IssuesEvent rows are removed — push and PR rows for the affected repo
-/// are left intact so the repo continues to contribute to push-count and
-/// pr-count ratings.
+/// The whole repo is dropped so leftover non-issue events cannot keep it in
+/// ratings or language fetches.
 ///
 /// At the default limit of 10 000, no repos are removed in typical months
 /// (the busiest legitimate issue tracker, AleoHQ/leo, peaks at ~8 200/month).
 /// The limit can be tuned downward (e.g. 5 000) to also catch smaller
-/// incentivised-issue campaigns at the cost of excluding that repo's issues.
-fn filter_high_volume_issue_repos(rows: &[Row], limit: u64) -> Vec<usize> {
+/// incentivised-issue campaigns at the cost of excluding that repo entirely.
+fn filter_high_volume_issue_repos<'a>(rows: &[&'a Row], limit: u64) -> Vec<&'a Row> {
     let before = rows.len();
 
-    // Sum IssuesEvent counts per repo.
     let mut repo_issue_totals: HashMap<&str, u64> = HashMap::new();
     for r in rows {
         if r.event_type == "IssuesEvent" {
-            *repo_issue_totals.entry(&r.repo).or_insert(0) += r.count;
+            *repo_issue_totals.entry(r.repo.as_str()).or_insert(0) += r.count;
         }
     }
 
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| {
-            // Only apply the cap to IssuesEvent rows; leave all other event
-            // types from the same repo untouched.
-            if r.event_type != "IssuesEvent" {
-                return true;
-            }
-            repo_issue_totals.get(r.repo.as_str()).copied().unwrap_or(0) <= limit
-        })
-        .map(|(i, _)| i)
+        .copied()
+        .filter(|r| repo_issue_totals.get(r.repo.as_str()).copied().unwrap_or(0) <= limit)
         .collect();
 
     log_filter(
@@ -415,34 +416,28 @@ fn filter_high_volume_issue_repos(rows: &[Row], limit: u64) -> Vec<usize> {
     kept
 }
 
-/// Drops **PushEvent** rows from any repo whose total PushEvent `count`
-/// exceeds `limit` (CLI default: 100). Other event types for that repo are
-/// kept — same shape as `filter_high_volume_issue_repos`.
+/// Drops **all** rows for any repo whose total PushEvent `count` exceeds
+/// `limit` (CLI default: 100).
 ///
 /// Complements `filter_high_volume_actors`: after the per-actor ceiling, a
 /// swarm of near-cap single-actor HTML/scraper repos (100–1000 pushes/month)
 /// still inflated push-count. A per-repo push ceiling removes that class
-/// without needing language data at filter time.
-fn filter_high_volume_push_repos(rows: &[Row], limit: u64) -> Vec<usize> {
+/// without needing language data at filter time. The whole repo is dropped so
+/// leftover non-push events cannot keep it in ratings or language fetches.
+fn filter_high_volume_push_repos<'a>(rows: &[&'a Row], limit: u64) -> Vec<&'a Row> {
     let before = rows.len();
 
     let mut repo_push_totals: HashMap<&str, u64> = HashMap::new();
     for r in rows {
         if r.event_type == "PushEvent" {
-            *repo_push_totals.entry(&r.repo).or_insert(0) += r.count;
+            *repo_push_totals.entry(r.repo.as_str()).or_insert(0) += r.count;
         }
     }
 
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| {
-            if r.event_type != "PushEvent" {
-                return true;
-            }
-            repo_push_totals.get(r.repo.as_str()).copied().unwrap_or(0) <= limit
-        })
-        .map(|(i, _)| i)
+        .copied()
+        .filter(|r| repo_push_totals.get(r.repo.as_str()).copied().unwrap_or(0) <= limit)
         .collect();
 
     log_filter(
@@ -455,7 +450,7 @@ fn filter_high_volume_push_repos(rows: &[Row], limit: u64) -> Vec<usize> {
 }
 
 /// Drops IssuesEvent rows from actors who have no PushEvent or PullRequestEvent
-/// anywhere in the dataset.
+/// in `rows`.
 ///
 /// These actors interact with repositories (filing bug reports, asking questions)
 /// but never contribute code during the measured period.  They add noise to
@@ -472,28 +467,24 @@ fn filter_high_volume_push_repos(rows: &[Row], limit: u64) -> Vec<usize> {
 ///
 /// Only IssuesEvent rows are removed.  If an actor also has PushEvent or
 /// PullRequestEvent rows, all their rows (including IssuesEvents) are kept.
-fn filter_issue_only_actors(rows: &[Row]) -> Vec<usize> {
+fn filter_issue_only_actors<'a>(rows: &[&'a Row]) -> Vec<&'a Row> {
     let before = rows.len();
 
-    // Collect actors that have at least one code event (push or PR).
     let code_actors: HashSet<&str> = rows
         .iter()
         .filter(|r| r.event_type == "PushEvent" || r.event_type == "PullRequestEvent")
         .map(|r| r.actor.as_str())
         .collect();
 
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| {
-            // Non-issue rows are always kept regardless of actor type.
+        .copied()
+        .filter(|r| {
             if r.event_type != "IssuesEvent" {
                 return true;
             }
-            // Keep IssuesEvent rows only for actors who also write code.
             code_actors.contains(r.actor.as_str())
         })
-        .map(|(i, _)| i)
         .collect();
 
     log_filter("filter_issue_only_actors", before, kept.len(), "");
@@ -506,19 +497,18 @@ fn filter_issue_only_actors(rows: &[Row]) -> Vec<usize> {
 /// These one-off repos make up ~56% of all rows but contribute negligible
 /// signal — a single event from an unknown repo tells us nothing useful about
 /// language trends.
-fn filter_single_event_repos(rows: &[Row]) -> Vec<usize> {
+fn filter_single_event_repos<'a>(rows: &[&'a Row]) -> Vec<&'a Row> {
     let before = rows.len();
 
     let mut repo_totals: HashMap<&str, u64> = HashMap::new();
     for r in rows {
-        *repo_totals.entry(&r.repo).or_insert(0) += r.count;
+        *repo_totals.entry(r.repo.as_str()).or_insert(0) += r.count;
     }
 
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| repo_totals[r.repo.as_str()] > 1)
-        .map(|(i, _)| i)
+        .copied()
+        .filter(|r| repo_totals[r.repo.as_str()] > 1)
         .collect();
 
     log_filter("filter_single_event_repos", before, kept.len(), "");
@@ -539,19 +529,18 @@ fn filter_single_event_repos(rows: &[Row]) -> Vec<usize> {
 /// event).  With the default `min_events = 10` that earlier filter becomes
 /// a strict subset, so both are kept in the chain — `filter_single_event_repos`
 /// still does useful work when `--repo-min-events` is lowered to 1 or 2.
-fn filter_low_activity_repos(rows: &[Row], min_events: u64) -> Vec<usize> {
+fn filter_low_activity_repos<'a>(rows: &[&'a Row], min_events: u64) -> Vec<&'a Row> {
     let before = rows.len();
 
     let mut repo_totals: HashMap<&str, u64> = HashMap::new();
     for r in rows {
-        *repo_totals.entry(&r.repo).or_insert(0) += r.count;
+        *repo_totals.entry(r.repo.as_str()).or_insert(0) += r.count;
     }
 
-    let kept: Vec<usize> = rows
+    let kept: Vec<&Row> = rows
         .iter()
-        .enumerate()
-        .filter(|(_, r)| repo_totals[r.repo.as_str()] >= min_events)
-        .map(|(i, _)| i)
+        .copied()
+        .filter(|r| repo_totals[r.repo.as_str()] >= min_events)
         .collect();
 
     log_filter(
@@ -632,7 +621,7 @@ fn read_csv(path: &Path) -> Result<Vec<Row>> {
 }
 
 /// Writes rows as RFC 4180 CSV.
-fn write_csv(rows: Vec<Row>, path: &Path) -> Result<()> {
+fn write_csv(rows: &[&Row], path: &Path) -> Result<()> {
     let file = File::create(path).with_context(|| format!("create {path:?}"))?;
     let mut w = csv::WriterBuilder::new()
         .terminator(csv::Terminator::Any(b'\n'))
@@ -640,7 +629,7 @@ fn write_csv(rows: Vec<Row>, path: &Path) -> Result<()> {
     w.write_record(["actor", "repo", "event_type", "action", "language", "count"])
         .context("write header")?;
 
-    for r in &rows {
+    for r in rows {
         w.write_record([
             &r.actor,
             &r.repo,
@@ -679,16 +668,17 @@ mod tests {
         }
     }
 
-    fn actors(rows: &[Row]) -> Vec<&str> {
+    fn actors<'a>(rows: &[&'a Row]) -> Vec<&'a str> {
         rows.iter().map(|r| r.actor.as_str()).collect()
     }
 
-    fn repos(rows: &[Row]) -> Vec<&str> {
+    fn repos<'a>(rows: &[&'a Row]) -> Vec<&'a str> {
         rows.iter().map(|r| r.repo.as_str()).collect()
     }
 
-    fn select(rows: &[Row], kept: Vec<usize>) -> Vec<Row> {
-        kept.into_iter().map(|i| rows[i].clone()).collect()
+    /// Borrow each owned row for filter APIs that take `&[&Row]`.
+    fn refs(rows: &[Row]) -> Vec<&Row> {
+        rows.iter().collect()
     }
 
     // ── filter_bots ───────────────────────────────────────────────────────────
@@ -701,7 +691,7 @@ mod tests {
             row("MyProjectBot", "a/a", "PushEvent", 1),
             row("BOT-ci", "a/a", "PushEvent", 1),
         ];
-        let result = select(&rows, filter_bots(&rows));
+        let result = filter_bots(&refs(&rows));
         assert_eq!(actors(&result), vec!["alice"]);
     }
 
@@ -716,7 +706,7 @@ mod tests {
             row("snyk-io", "a/a", "PushEvent", 1),
             row("netlify[bot]", "a/a", "PushEvent", 1),
         ];
-        let result = select(&rows, filter_ci_actors(&rows));
+        let result = filter_ci_actors(&refs(&rows));
         assert_eq!(actors(&result), vec!["alice"]);
     }
 
@@ -729,21 +719,21 @@ mod tests {
             row("bob", "active/repo", "PushEvent", 1), // total=4, kept
             row("carol", "quiet/repo", "PushEvent", 1), // total=1, dropped
         ];
-        let result = select(&rows, filter_single_event_repos(&rows));
+        let result = filter_single_event_repos(&refs(&rows));
         assert_eq!(repos(&result), vec!["active/repo", "active/repo"]);
     }
 
-    // ── filter_empty_repos ────────────────────────────────────────────────────
+    // ── filter_no_code_activity_repos ────────────────────────────────────────────────────
 
     #[test]
-    fn test_filter_empty_repos() {
+    fn test_filter_no_code_activity_repos() {
         let rows = vec![
             row("alice", "code/repo", "PushEvent", 2),
             row("alice", "code/repo", "IssuesEvent", 1), // kept: repo has pushes
             row("bob", "watch/repo", "WatchEvent", 5),   // dropped: no push/PR
             row("bob", "watch/repo", "IssuesEvent", 1),  // dropped: same repo
         ];
-        let result = select(&rows, filter_empty_repos(&rows));
+        let result = filter_no_code_activity_repos(&refs(&rows));
         assert_eq!(repos(&result), vec!["code/repo", "code/repo"]);
     }
 
@@ -756,7 +746,7 @@ mod tests {
             row("alice", "a/b", "PushEvent", 5), // alice total=10, kept (limit=10)
             row("bob", "b/a", "PushEvent", 11),  // bob total=11, dropped
         ];
-        let result = select(&rows, filter_high_volume_actors(&rows, 10));
+        let result = filter_high_volume_actors(&refs(&rows), 10);
         assert_eq!(actors(&result), vec!["alice", "alice"]);
     }
 
@@ -773,7 +763,7 @@ mod tests {
             row("alice", &format!("{uuid}/repo"), "PushEvent", 1),
             row("alice", &format!("owner/{uuid}"), "PushEvent", 1),
         ];
-        let result = select(&rows, filter_deleted_repos(&rows));
+        let result = filter_deleted_repos(&refs(&rows));
         assert_eq!(repos(&result), vec!["normal/repo"]);
     }
 
@@ -787,7 +777,7 @@ mod tests {
             row("bob", "b/b", "ForkEvent", 3),   // bob is fork-only → dropped
             row("carol", "c/c", "WatchEvent", 2), // carol is watch-only → dropped
         ];
-        let result = select(&rows, filter_fork_only_actors(&rows));
+        let result = filter_fork_only_actors(&refs(&rows));
         assert_eq!(actors(&result), vec!["alice", "alice"]);
     }
 
@@ -797,16 +787,16 @@ mod tests {
     fn test_filter_high_volume_issue_repos() {
         let rows = vec![
             row("alice", "spam/repo", "IssuesEvent", 200), // total issues=200 > limit=100
-            row("alice", "spam/repo", "PushEvent", 1),     // push kept even for spam/repo
+            row("alice", "spam/repo", "PushEvent", 1),     // dropped with the repo
             row("bob", "good/repo", "IssuesEvent", 50),    // total issues=50, kept
         ];
-        let result = select(&rows, filter_high_volume_issue_repos(&rows, 100));
+        let result = filter_high_volume_issue_repos(&refs(&rows), 100);
         assert_eq!(
             result
                 .iter()
                 .map(|r| (r.repo.as_str(), r.event_type.as_str()))
                 .collect::<Vec<_>>(),
-            vec![("spam/repo", "PushEvent"), ("good/repo", "IssuesEvent")]
+            vec![("good/repo", "IssuesEvent")]
         );
     }
 
@@ -816,16 +806,16 @@ mod tests {
     fn test_filter_high_volume_push_repos() {
         let rows = vec![
             row("alice", "mill/repo", "PushEvent", 150), // total pushes=150 > limit=100
-            row("alice", "mill/repo", "PullRequestEvent", 2), // PR kept
+            row("alice", "mill/repo", "PullRequestEvent", 2), // dropped with the repo
             row("bob", "ok/repo", "PushEvent", 50),      // total pushes=50, kept
         ];
-        let result = select(&rows, filter_high_volume_push_repos(&rows, 100));
+        let result = filter_high_volume_push_repos(&refs(&rows), 100);
         assert_eq!(
             result
                 .iter()
                 .map(|r| (r.repo.as_str(), r.event_type.as_str()))
                 .collect::<Vec<_>>(),
-            vec![("mill/repo", "PullRequestEvent"), ("ok/repo", "PushEvent"),]
+            vec![("ok/repo", "PushEvent")]
         );
     }
 
@@ -838,7 +828,7 @@ mod tests {
             row("alice", "a/a", "IssuesEvent", 2),
             row("bob", "b/b", "IssuesEvent", 5), // bob has no code → issue row dropped
         ];
-        let result = select(&rows, filter_issue_only_actors(&rows));
+        let result = filter_issue_only_actors(&refs(&rows));
         assert_eq!(
             result.iter().map(|r| r.actor.as_str()).collect::<Vec<_>>(),
             vec!["alice", "alice"]
@@ -854,7 +844,7 @@ mod tests {
             row("a", "edge/repo", "PushEvent", 9), // total=9, dropped (< 10)
             row("a", "tiny/repo", "PushEvent", 1), // total=1, dropped
         ];
-        let result = select(&rows, filter_low_activity_repos(&rows, 10));
+        let result = filter_low_activity_repos(&refs(&rows), 10);
         assert_eq!(repos(&result), vec!["big/repo"]);
     }
 
@@ -866,14 +856,14 @@ mod tests {
             row("b", "edge/repo", "PushEvent", 6),
             row("a", "big/repo", "PushEvent", 100),
         ];
-        let result = select(&rows, filter_low_activity_repos(&rows, 10));
+        let result = filter_low_activity_repos(&refs(&rows), 10);
         assert_eq!(repos(&result), vec!["edge/repo", "edge/repo", "big/repo"]);
     }
 
     #[test]
     fn test_low_activity_repos_keeps_at_boundary() {
         let rows = vec![row("a", "exact/repo", "PushEvent", 10)];
-        let result = select(&rows, filter_low_activity_repos(&rows, 10));
+        let result = filter_low_activity_repos(&refs(&rows), 10);
         assert_eq!(repos(&result), vec!["exact/repo"]);
     }
 
@@ -883,7 +873,7 @@ mod tests {
             row("a", "one/repo", "PushEvent", 1),
             row("a", "two/repo", "PushEvent", 2),
         ];
-        let result = select(&rows, filter_low_activity_repos(&rows, 1));
+        let result = filter_low_activity_repos(&refs(&rows), 1);
         assert_eq!(repos(&result), vec!["one/repo", "two/repo"]);
     }
 
@@ -893,7 +883,7 @@ mod tests {
             row("a", "any/repo", "PushEvent", 5),
             row("a", "other/repo", "PushEvent", 100),
         ];
-        let result = select(&rows, filter_low_activity_repos(&rows, 0));
+        let result = filter_low_activity_repos(&refs(&rows), 0);
         // threshold 0: keep repos with >= 0 events.  But a repo with 0 events
         // can't appear in the dataset (every row has count >= 1), so this
         // is effectively a no-op that keeps all rows.
@@ -976,6 +966,40 @@ dependabot[bot],human/repo,PushEvent,,,20
             r#"actor,repo,event_type,action,language,count
 alice,human/repo,PushEvent,,,1
 "#
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_no_code_activity_repos_runs_on_post_threshold_set() -> Result<()> {
+        // Bot is the only pusher; after phase 1 only a human CreateEvent remains.
+        // Phase-2 no_code_activity_repos must drop the repo (no Push/PR left), unlike the
+        // old all-independent model which kept CreateEvent because the raw
+        // month had bot pushes.
+        let tmp = tempfile::tempdir()?;
+        let dir = tmp.path();
+
+        std::fs::write(
+            dir.join("events-2024-01.csv"),
+            r#"actor,repo,event_type,action,language,count
+alice,leftover/repo,CreateEvent,,,1
+dependabot[bot],leftover/repo,PushEvent,,,20
+"#,
+        )?;
+
+        run(Args {
+            input: dir.join("events-2024-01.csv"),
+            output: dir.join("events-2024-01.csv"),
+            actor_event_limit: 1_000,
+            repo_issue_limit: 10_000,
+            repo_push_limit: 100,
+            repo_min_events: 10,
+        })?;
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("events-2024-01.csv"))?,
+            "actor,repo,event_type,action,language,count\n"
         );
 
         Ok(())

@@ -84,7 +84,7 @@ Individual pipeline step examples are documented in `README.md`.
 
 **stderr for diagnostics, stdout for data (`repo_language_loader`):** All progress output goes to `stderr`; all data output goes to `stdout` as clean JSONL. This enables shell piping and must be maintained for any binary that reads/writes data streams.
 
-**Independent filter intersection (`filter_events`):** Each filter is a pure function `&[Row] → Vec<usize>` named `filter_<noun>` and always sees the original row set. `run` intersects survivor index sets into a `HashSet<usize>` with `intersect(&mut survived, filter_(&all))` and retains a row only if every filter kept it. Follow this pattern when adding new filters. Every filter must log a `[filter_name] N removed (X.X%), M remaining` line to stderr (counts are relative to the original set).
+**Two-phase filters (`filter_events`):** Every `filter_*` is `&[&Row]` (+ optional thresholds) → `Vec<&Row>` (borrows from the owned CSV; no `Row` clones). Independent filters always see the **original** row set; `run` intersects their kept-ref sets by address so aggregate limits are not falsified by earlier cuts and each filter’s log is relative to the full input. `filter_no_code_activity_repos` then runs as `rows = filter_no_code_activity_repos(&rows)` on post-intersection survivors so leftovers with no remaining Push/PR are dropped. Every filter must log a `[filter_name] N removed (X.X%), M remaining` line to stderr (independent filters vs the original set; no-code-activity-repos vs its input rows).
 
 **Retry with exponential back-off:** Both HTTP clients implement manual retry (no middleware). New HTTP calls should follow the same pattern.
 

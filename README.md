@@ -61,9 +61,10 @@ cargo run --release --bin filter_events -- \
   --output "data/events-filtered/events-${YEAR}-${MONTH}.csv"
 
 # Step 3 — resolve language breakdown via GitHub GraphQL
-# Unique repo slugs for event types scored by produce_statistics (see docs/LANGUAGE_DATA.md).
+# Unique repo slugs from the filtered file (filter_no_code_activity_repos already
+# drops any repo without Push/PR activity; see docs/LANGUAGE_DATA.md).
 export GITHUB_TOKEN=ghp_…
-awk -F',' 'NR>1 && ($3 == "PullRequestEvent" || $3 == "IssuesEvent" || $3 == "PushEvent" || $3 == "WatchEvent") {print $2}' \
+awk -F',' 'NR>1 {print $2}' \
     "data/events-filtered/events-${YEAR}-${MONTH}.csv" | sort -u \
   | cargo run --release --bin repo_language_loader -- \
   > "data/repo-languages/repo-languages-${YEAR}-${MONTH}.jsonl"
