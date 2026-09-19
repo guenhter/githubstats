@@ -1,4 +1,4 @@
-//! github-archive-loader
+//! event-loader
 //!
 //! Downloads GitHub Archive hourly `.json.gz` files for a given month, extracts
 //! events, and writes aggregated counts to a CSV file.
@@ -25,7 +25,7 @@
 //!                             using the `csv` crate.
 //!
 //! Usage:
-//!   github-archive-loader --year 2026 --month 1 --parallelism 10 --output events.csv
+//!   event-loader --year 2026 --month 1 --parallelism 10 --output events.csv
 //!
 //! Output format (CSV):
 //!   actor,repo,event_type,action,language,count
@@ -75,7 +75,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
-const USER_AGENT: &str = "githubstats/0.1 (github-archive-loader)";
+const USER_AGENT: &str = "githubstats/0.1 (event-loader)";
 
 /// HTTP client settings.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -103,7 +103,7 @@ const EVENTS_CAPACITY: usize = 8_192;
 
 #[derive(Parser)]
 #[command(
-    name = "github-archive-loader",
+    name = "event-loader",
     about = "Download GitHub Archive files for a month and write aggregated event counts as CSV"
 )]
 struct Args {
@@ -119,7 +119,7 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     parallelism: usize,
 
-    /// Only download this many archives (for testing); omit to fetch the whole month
+    /// Only download this many GH Archive hourly files (for testing); omit to fetch the whole month
     #[arg(long)]
     limit: Option<usize>,
 
@@ -264,7 +264,7 @@ async fn populate_download_jobs(
         .min(total_urls as usize);
 
     eprintln!(
-        "Fetching {total} archives for {year}-{month:02}{}",
+        "Fetching {total} GH Archive hours for {year}-{month:02}{}",
         if limit.is_some() {
             " (sample mode)"
         } else {

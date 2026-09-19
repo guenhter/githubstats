@@ -1,7 +1,7 @@
 //! produce-statistics
 //!
-//! Joins an archive CSV file (output of `github_archive_loader` / `filter_archive`)
-//! with a projects-languages JSONL file and produces multiple language-rating files
+//! Joins an events CSV file (output of `event_loader` / `filter_events`)
+//! with a repo-languages JSONL file and produces multiple language-rating files
 //! in the specified output directory.
 //!
 //! Output files (JSONL, sorted descending by rating):
@@ -27,23 +27,22 @@
 //!   repos keep full volume.  active-repos / issues / stars are unchanged.
 //!   Blunts single-person push mills without dropping those repos.
 //!
-//! Event types read from the archive CSV:
+//! Event types read from the events CSV:
 //!   PullRequestEvent → pr-count and active-repos
 //!   IssuesEvent      → issue-count
 //!   PushEvent        → push-count and active-repos
 //!   WatchEvent       → star-count
 //!
 //! Input formats:
-//!   --archive   CSV: actor,repo,event_type,action,language,count
-//!   --languages JSONL: {"repo":"…","total_size":N,"languages":[{"language":"Rust","size":N},…]}
+//!   --events        CSV: actor,repo,event_type,action,language,count
+//!   --repo-languages JSONL: {"repo":"…","total_size":N,"languages":[{"language":"Rust","size":N},…]}
 //!
-//! The YEAR and MONTH for the output filename are inferred from the archive
-//! filename, which must contain the pattern YYYYMM (e.g. archive-202401.csv or
-//! archive-202401-filtered.csv).
+//! The YEAR and MONTH for the output filename are inferred from the events
+//! filename (`events-YYYY-MM.csv`).
 //!
 //! All progress and diagnostic messages go to stderr.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::Parser;
 use serde::Deserialize;
 use serde_json::json;
@@ -63,20 +62,20 @@ type LangMap = HashMap<String, (u64, Vec<(String, u64)>)>;
 #[derive(Parser)]
 #[command(
     name = "produce-statistics",
-    about = "Compute weighted language ratings from an archive CSV and language breakdowns.\n\
+    about = "Compute weighted language ratings from an events CSV and repo language breakdowns.\n\
              Produces multiple JSONL files in --output-dir, one per statistic type."
 )]
 struct Args {
-    /// Archive CSV file produced by github_archive_loader / filter_archive.
+    /// Events CSV file produced by event_loader / filter_events.
     /// Format: actor,repo,event_type,action,language,count
-    /// The filename must contain YYYYMM (e.g. archive-202401-filtered.csv).
+    /// The filename must be `events-YYYY-MM.csv`.
     #[arg(long)]
-    archive: PathBuf,
+    events: PathBuf,
 
-    /// JSONL file with per-project language breakdowns.
+    /// JSONL file with per-repo language breakdowns.
     /// Format: {"repo":"owner/repo","total_size":158498874,"languages":[{"language":"Rust","size":143102371},…]}
-    #[arg(long)]
-    languages: PathBuf,
+    #[arg(long = "repo-languages")]
+    repo_languages: PathBuf,
 
     /// Directory where the output JSONL files will be written.
     /// Files are named: language-ratings-YYYY-MM-<type>.jsonl
@@ -104,7 +103,7 @@ struct LanguageEntry {
     size: u64,
 }
 
-/// All per-repo activity counts collected from the archive CSV in a single pass.
+/// All per-repo activity counts collected from the events CSV in a single pass.
 struct RepoCounts {
     /// Total PullRequestEvent count per repo.
     pr_counts: HashMap<String, u64>,
@@ -128,20 +127,20 @@ fn main() -> Result<()> {
 }
 
 fn run(args: Args) -> Result<()> {
-    // Infer YYYY-MM from the archive filename.
-    let year_month = infer_year_month(&args.archive)?;
+    // Infer YYYY-MM from the events filename.
+    let year_month = infer_year_month(&args.events)?;
     eprintln!("Inferred period: {year_month}");
 
     // Create output directory if it doesn't exist.
     std::fs::create_dir_all(&args.output_dir)
         .with_context(|| format!("cannot create output dir {:?}", args.output_dir))?;
 
-    eprintln!("Loading languages from {:?} …", args.languages);
-    let lang_map = load_languages(&args.languages)?;
+    eprintln!("Loading languages from {:?} …", args.repo_languages);
+    let lang_map = load_languages(&args.repo_languages)?;
     eprintln!("  {} repos with language data", lang_map.len());
 
-    eprintln!("Reading activity from {:?} …", args.archive);
-    let mut counts = collect_counts(&args.archive)?;
+    eprintln!("Reading activity from {:?} …", args.events);
+    let mut counts = collect_counts(&args.events)?;
     if args.cap_single_actor_events {
         let n = cap_single_actor_events(&mut counts);
         eprintln!("  [cap_single_actor_events] capped push/PR to 1 on {n} single-actor repos");
@@ -206,29 +205,17 @@ fn run(args: Args) -> Result<()> {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Extract YYYY-MM from an archive filename that contains a YYYYMM digit sequence.
-/// Accepts filenames like archive-202401.csv or archive-202401-filtered.csv.
+/// Extract `YYYY-MM` from `events-YYYY-MM.csv`.
 fn infer_year_month(path: &PathBuf) -> Result<String> {
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
         .with_context(|| format!("cannot read filename from {:?}", path))?;
 
-    // Find the first run of 6 consecutive ASCII digits.
-    let chars: Vec<char> = name.chars().collect();
-    for i in 0..chars.len().saturating_sub(5) {
-        if chars[i..i + 6].iter().all(|c| c.is_ascii_digit()) {
-            let year: String = chars[i..i + 4].iter().collect();
-            let month: String = chars[i + 4..i + 6].iter().collect();
-            return Ok(format!("{year}-{month}"));
-        }
-    }
-
-    bail!(
-        "cannot infer YYYY-MM from archive filename {:?}; \
-         filename must contain a YYYYMM sequence (e.g. archive-202401-filtered.csv)",
-        name
-    );
+    name.strip_prefix("events-")
+        .and_then(|s| s.strip_suffix(".csv"))
+        .map(str::to_owned)
+        .with_context(|| format!("expected events-YYYY-MM.csv, got {name:?}"))
 }
 
 /// Build the output file path for a given type.
@@ -297,7 +284,7 @@ fn load_languages(path: &PathBuf) -> Result<LangMap> {
     Ok(map)
 }
 
-/// Read the archive CSV in a single pass and accumulate counts for all
+/// Read the events CSV in a single pass and accumulate counts for all
 /// relevant event types.
 ///
 /// CSV format (first row is header):
@@ -398,7 +385,7 @@ fn collect_counts(path: &PathBuf) -> Result<RepoCounts> {
     })
 }
 
-/// Scoring companion to `filter_archive`'s volume caps: for repos with exactly
+/// Scoring companion to `filter_events`'s volume caps: for repos with exactly
 /// one distinct actor (push + PR), set push-count and pr-count to at most 1.
 /// Keeps the repos in the dataset but removes remaining push-mill volume from
 /// the ratings. Returns how many repos were capped.
@@ -488,7 +475,7 @@ mod tests {
 
         // Two repos: rust-lang/rust (Rust-heavy) and golang/go (Go-only).
         std::fs::write(
-            dir.join("archive-202401-filtered.csv"),
+            dir.join("events-2024-01.csv"),
             r#"actor,repo,event_type,action,language,count
 alice,rust-lang/rust,PullRequestEvent,opened,,3
 bob,rust-lang/rust,PushEvent,,,5
@@ -501,15 +488,15 @@ carol,golang/go,WatchEvent,,,10
 
         // rust-lang/rust: 90% Rust, 10% C.  golang/go: 100% Go.
         std::fs::write(
-            dir.join("languages-2024-01.jsonl"),
+            dir.join("repo-languages-2024-01.jsonl"),
             r#"{"repo":"rust-lang/rust","total_size":1000,"languages":[{"language":"Rust","size":900},{"language":"C","size":100}],"fetched_at":"2026-01-15T10:30:00Z"}
 {"repo":"golang/go","total_size":500,"languages":[{"language":"Go","size":500}],"fetched_at":"2026-01-15T10:30:00Z"}
 "#,
         )?;
 
         run(Args {
-            archive: dir.join("archive-202401-filtered.csv"),
-            languages: dir.join("languages-2024-01.jsonl"),
+            events: dir.join("events-2024-01.csv"),
+            repo_languages: dir.join("repo-languages-2024-01.jsonl"),
             output_dir: dir.to_path_buf(),
             cap_single_actor_events: false,
         })?;

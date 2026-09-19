@@ -8,7 +8,10 @@
 
 The pipeline downloads every public GitHub event for a given month, filters out bots and automated noise, resolves language compositions per repository, and computes multiple weighted language activity ratings. The results are consumed by a single-page web UI (`index.html`) that renders an interactive trend chart (via Apache ECharts) and a ranked table with sparklines.
 
-The project covers January 2015 through the present (~11 years of monthly data). A key data discontinuity exists: GitHub removed language data from event payloads in October 2025. Before that date, language attribution uses the single primary language field; from October 2025 onward, the GraphQL API is required for full multi-language breakdown.
+The project covers January 2015 through the present (~11 years of monthly data).
+Language attribution always comes from the GitHub GraphQL API via `repo_language_loader`
+(see `docs/LANGUAGE_DATA.md`). Event payloads used to embed a primary-language field
+until October 2025; that field is not used by the pipeline.
 
 ### Technology Stack
 
@@ -21,16 +24,16 @@ The project covers January 2015 through the present (~11 years of monthly data).
 ```
 githubstats/
 ├── src/bin/                    # Five standalone CLI binaries (the entire backend)
-│   ├── github_archive_loader.rs   # Step 1: GH Archive → aggregated CSV
-│   ├── filter_archive.rs          # Step 2: filtered CSV (bot/noise removal)
-│   ├── github_language_loader.rs  # Step 3: repo slugs → GitHub GraphQL → language JSONL
-│   ├── produce_statistics.rs      # Step 4: CSV + languages → 5 per-month rating files
+│   ├── event_loader.rs            # Step 1: GH Archive → aggregated events CSV
+│   ├── filter_events.rs           # Step 2: filtered events CSV (bot/noise removal)
+│   ├── repo_language_loader.rs    # Step 3: repo slugs → GitHub GraphQL → language JSONL
+│   ├── produce_statistics.rs      # Step 4: events CSV + languages → 5 per-month rating files
 │   └── pack_statistics.rs         # Step 5: per-month files → 5 combined all-months files
 ├── data/                       # All intermediate and final data (large; partially gitignored)
-│   ├── archives/archive-YYYYMM.csv                      # Gitignored; raw monthly aggregates
-│   ├── archives-filtered/archive-YYYYMM-filtered.csv    # Gitignored; post-filter CSVs
-│   ├── languages/languages-YYYY-MM.jsonl                # Gitignored; repo → language breakdown
-│   └── stats/language-ratings-{YYYY-MM,all}-<type>.jsonl # Ratings consumed by the frontend
+│   ├── events/events-YYYY-MM.csv                            # Gitignored; raw monthly event aggregates
+│   ├── events-filtered/events-YYYY-MM.csv                   # Gitignored; post-filter CSVs
+│   ├── repo-languages/repo-languages-YYYY-MM.jsonl          # Gitignored; repo → language breakdown
+│   └── stats/language-ratings-{YYYY-MM,all}-<type>.jsonl    # Ratings consumed by the frontend
 ├── docs/                       # Reference docs and sample event payloads
 │   ├── GITHUB_EVENT_TYPES.md
 │   └── events/{2024,2026}/     # Sample pre/post API-change payloads
@@ -49,9 +52,9 @@ githubstats/
 
 | File | Pattern |
 |---|---|
-| Raw archive (gitignored) | `data/archives/archive-YYYYMM.csv` |
-| Filtered archive (gitignored) | `data/archives-filtered/archive-YYYYMM-filtered.csv` |
-| Language lookup (gitignored) | `data/languages/languages-YYYY-MM.jsonl` |
+| Raw events (gitignored) | `data/events/events-YYYY-MM.csv` |
+| Filtered events (gitignored) | `data/events-filtered/events-YYYY-MM.csv` |
+| Repo language lookup (gitignored) | `data/repo-languages/repo-languages-YYYY-MM.jsonl` |
 | Per-month rating | `data/stats/language-ratings-YYYY-MM-<type>.jsonl` |
 | Combined all-months rating | `data/stats/language-ratings-all-<type>.jsonl` |
 
@@ -77,11 +80,11 @@ Individual pipeline step examples are documented in `README.md`.
 
 **Self-contained binaries:** Each binary under `src/bin/` is fully self-contained. There is intentionally no shared library crate. Prefer this pattern — duplicate small utilities rather than introducing premature abstractions.
 
-**Staged concurrent pipeline (`github_archive_loader`):** Uses bounded `async-channel` MPMC channels between stages. Network I/O is async; CPU-intensive work (gzip decompression, JSON parsing) runs on `tokio::task::spawn_blocking`. This pattern must be preserved to avoid blocking the async executor.
+**Staged concurrent pipeline (`event_loader`):** Uses bounded `async-channel` MPMC channels between stages. Network I/O is async; CPU-intensive work (gzip decompression, JSON parsing) runs on `tokio::task::spawn_blocking`. This pattern must be preserved to avoid blocking the async executor.
 
-**stderr for diagnostics, stdout for data (`github_language_loader`):** All progress output goes to `stderr`; all data output goes to `stdout` as clean JSONL. This enables shell piping and must be maintained for any binary that reads/writes data streams.
+**stderr for diagnostics, stdout for data (`repo_language_loader`):** All progress output goes to `stderr`; all data output goes to `stdout` as clean JSONL. This enables shell piping and must be maintained for any binary that reads/writes data streams.
 
-**Independent filter intersection (`filter_archive`):** Each filter is a pure function `&[Row] → Vec<usize>` named `filter_<noun>` and always sees the original row set. `run` intersects survivor index sets into a `HashSet<usize>` with `intersect(&mut survived, filter_(&all))` and retains a row only if every filter kept it. Follow this pattern when adding new filters. Every filter must log a `[filter_name] N removed (X.X%), M remaining` line to stderr (counts are relative to the original set).
+**Independent filter intersection (`filter_events`):** Each filter is a pure function `&[Row] → Vec<usize>` named `filter_<noun>` and always sees the original row set. `run` intersects survivor index sets into a `HashSet<usize>` with `intersect(&mut survived, filter_(&all))` and retains a row only if every filter kept it. Follow this pattern when adding new filters. Every filter must log a `[filter_name] N removed (X.X%), M remaining` line to stderr (counts are relative to the original set).
 
 **Retry with exponential back-off:** Both HTTP clients implement manual retry (no middleware). New HTTP calls should follow the same pattern.
 
@@ -98,7 +101,7 @@ Individual pipeline step examples are documented in `README.md`.
 
 | Variable | Required by | Purpose |
 |---|---|---|
-| `GITHUB_TOKEN` | `github_language_loader` | GitHub PAT for GraphQL API (public repo read access sufficient) |
+| `GITHUB_TOKEN` | `repo_language_loader` | GitHub PAT for GraphQL API (public repo read access sufficient) |
 
 ### Frontend Testing
 

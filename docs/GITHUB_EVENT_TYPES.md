@@ -1,6 +1,6 @@
 # GitHub Event Types
 
-The archive CSV contains one row per unique `(actor, repo, event_type, action)` tuple per month.
+The events CSV contains one row per unique `(actor, repo, event_type, action)` tuple per month.
 `produce_statistics` uses four event types:
 
 | Event type | Used for |

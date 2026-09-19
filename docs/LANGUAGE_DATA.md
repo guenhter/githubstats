@@ -1,19 +1,20 @@
 # Language data sources and attribution
 
-## Why not just use the GH Archive for language data?
+## Why GraphQL for language data?
 
 The GH Archive publishes every public GitHub event as hourly gzip-compressed
-NDJSON files (`YYYY-MM-DD-H.json.gz`). Until September 2025 those files
-contained rich payloads — including `pull_request.base.repo.language` —
-which made full language attribution possible with zero external API calls.
+NDJSON files (`YYYY-MM-DD-H.json.gz`). Those files tell you *what happened* and
+*on which repository*, but not a reliable multi-language breakdown of the repo.
 
-**From October 2025 onwards GitHub stripped those payload fields.** A 2026
-`PullRequestEvent` contains only the PR URL, number, and the head/base ref
-and SHA. No language. No line counts. No merge flag.
+Until September 2025, some event payloads included a single primary-language
+string (for example `pull_request.base.repo.language`). **From October 2025
+onwards GitHub stripped those payload fields.** A 2026 `PullRequestEvent`
+contains only the PR URL, number, and the head/base ref and SHA — no language,
+no line counts, no merge flag.
 
-This means for 2026 data the archive alone can tell you *what happened* and
-*on which repository*, but never *in which language* — hence the GraphQL
-language-lookup step.
+This project always resolves languages the same way: `repo_language_loader`
+queries the GitHub GraphQL API for each repo's language byte breakdown and
+writes `data/repo-languages/repo-languages-YYYY-MM.jsonl`.
 
 ### Official reference
 
@@ -25,7 +26,7 @@ Community impact documented in:
 
 ---
 
-## Why not just use Google BigQuery for archive data?
+## Why not just use Google BigQuery for GH Archive data?
 
 The GH Archive data is also available via Google BigQuery (`githubarchive` public dataset),
 which allows SQL queries over the full event history without downloading any files.
@@ -37,8 +38,8 @@ There are two reasons this project downloads the raw `.json.gz` files directly i
 
 - **Payload stripping.** BigQuery mirrors whatever GH Archive publishes. From October 2025
   onwards the payloads are already stripped (no language field) before they reach BigQuery,
-  so the same GraphQL language-lookup step would still be required. BigQuery offers no
-  advantage for post-2025 data.
+  so the same GraphQL language-lookup step is still required. BigQuery offers no
+  advantage for language attribution.
 
 ---
 

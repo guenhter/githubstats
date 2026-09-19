@@ -1,4 +1,4 @@
-//! github-language-loader
+//! repo-language-loader
 //!
 //! Reads "owner/name" repository slugs from stdin and queries the GitHub
 //! GraphQL API to fetch the language breakdown for each repository.
@@ -50,7 +50,7 @@
 //! Per-batch stdout flushing means a killed run leaves a usable partial
 //! output.  Callers are responsible for not re-requesting already-fetched
 //! repos — `collect_month.sh`, for example, diffs the existing
-//! `languages-YYYY-MM.jsonl` against the archive's repo list on the host and
+//! `repo-languages-YYYY-MM.jsonl` against the events CSV repo list on the host and
 //! pipes only the still-pending slugs into stdin.
 
 use anyhow::{Context, Result};
@@ -83,7 +83,7 @@ const CLEAN_STREAK_FOR_DECAY: u32 = 200;
 
 #[derive(Parser)]
 #[command(
-    name = "github-language-loader",
+    name = "repo-language-loader",
     about = "Fetch language breakdowns for GitHub repos from stdin; emits JSONL on stdout"
 )]
 struct Args {

@@ -1,7 +1,7 @@
 # Downloaded GH Archive files (large, transient)
 *.json.gz
-archive*.csv
-languages-*.jsonl
+events*.csv
+repo-languages-*.jsonl
 
 # Secrets
 .env

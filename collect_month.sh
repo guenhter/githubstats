@@ -2,9 +2,9 @@
 # collect_month.sh
 #
 # Collects and publishes stats for the previous calendar month:
-#   1. GH Archive events     → data/archives/archive-YYYYMM.csv
-#   2. Filter noise          → data/archives-filtered/archive-YYYYMM-filtered.csv
-#   3. GitHub languages      → data/languages/languages-YYYY-MM.jsonl
+#   1. GH Archive events     → data/events/events-YYYY-MM.csv
+#   2. Filter noise          → data/events-filtered/events-YYYY-MM.csv
+#   3. Repo languages        → data/repo-languages/repo-languages-YYYY-MM.jsonl
 #   4. Per-month ratings     → data/stats/language-ratings-YYYY-MM-<type>.jsonl
 #   5. Pack all-months files → data/stats/language-ratings-all-<type>.jsonl
 #
@@ -34,7 +34,6 @@ fi
 YEAR=$(date -d "$(date +%Y-%m-01) -1 month" +%Y)
 MONTH=$(date -d "$(date +%Y-%m-01) -1 month" +%m)   # zero-padded, e.g. 06
 YM="${YEAR}-${MONTH}"
-YYYYMM="${YEAR}${MONTH}"
 
 STAT_TYPES=(pr-count issue-count push-count active-repos star-count)
 
@@ -44,7 +43,7 @@ STAT_TYPES=(pr-count issue-count push-count active-repos star-count)
 docker_run() {
   local step=$1
   shift
-  local name="githubstats-${step}-${YYYYMM}"
+  local name="githubstats-${step}-${YEAR}${MONTH}"
 
   # Drop a leftover container from an interrupted earlier run of this step.
   docker container rm -f "$name" >/dev/null 2>&1 || true
@@ -62,43 +61,43 @@ docker_run() {
 
 echo "[$(date -Iseconds)] collect_month.sh starting for ${YM}"
 
-mkdir -p data/archives data/archives-filtered data/languages data/stats
+mkdir -p data/events data/events-filtered data/repo-languages data/stats
 
-# ── Step 1: GH Archive loader ──────────────────────────────────────────────
-ARCHIVE_OUT="data/archives/archive-${YYYYMM}.csv"
+# ── Step 1: event loader (from GH Archive) ─────────────────────────────────
+EVENTS_OUT="data/events/events-${YM}.csv"
 
-if [[ -f "$ARCHIVE_OUT" ]]; then
-  echo "[$(date -Iseconds)] Step 1 skipped — $ARCHIVE_OUT already exists"
+if [[ -f "$EVENTS_OUT" ]]; then
+  echo "[$(date -Iseconds)] Step 1 skipped — $EVENTS_OUT already exists"
 else
   echo "[$(date -Iseconds)] Step 1 — downloading GH Archive for ${YM}"
-  docker_run archive_loader github_archive_loader -- \
+  docker_run event_loader event_loader -- \
     --year  "$YEAR"  \
     --month "$MONTH" \
     --parallelism 10 \
-    --output "$ARCHIVE_OUT"
-  echo "[$(date -Iseconds)] Step 1 done → $ARCHIVE_OUT"
+    --output "$EVENTS_OUT"
+  echo "[$(date -Iseconds)] Step 1 done → $EVENTS_OUT"
 fi
 
 # ── Step 2: filter (bot/noise removal + low-activity tail trim) ────────────
-# Defaults match filter_archive / the historical stats series
+# Defaults match filter_events / the historical stats series
 # (--actor-event-limit 1000, --repo-push-limit 100, --repo-min-events 10).
-FILTERED_OUT="data/archives-filtered/archive-${YYYYMM}-filtered.csv"
+FILTERED_OUT="data/events-filtered/events-${YM}.csv"
 
 if [[ -f "$FILTERED_OUT" ]]; then
   echo "[$(date -Iseconds)] Step 2 skipped — $FILTERED_OUT already exists"
 else
-  echo "[$(date -Iseconds)] Step 2 — filtering $ARCHIVE_OUT"
-  docker_run filter_archive filter_archive -- \
-    --input  "$ARCHIVE_OUT" \
+  echo "[$(date -Iseconds)] Step 2 — filtering $EVENTS_OUT"
+  docker_run filter_events filter_events -- \
+    --input  "$EVENTS_OUT" \
     --output "$FILTERED_OUT"
   echo "[$(date -Iseconds)] Step 2 done → $FILTERED_OUT"
 fi
 
-# ── Step 3: GitHub language loader (resumable) ─────────────────────────────
-# If a previous run was interrupted, the partial languages-YYYY-MM.jsonl is
+# ── Step 3: repo language loader (resumable) ───────────────────────────────
+# If a previous run was interrupted, the partial repo-languages-YYYY-MM.jsonl is
 # kept and only the repos not yet present in it are fetched again; new results
 # are appended. This makes Step 3 safe to interrupt and resume at any time.
-LANGUAGES_OUT="data/languages/languages-${YM}.jsonl"
+LANGUAGES_OUT="data/repo-languages/repo-languages-${YM}.jsonl"
 DONE_REPOS=$(mktemp)
 PENDING=$(mktemp)
 trap 'rm -f "$DONE_REPOS" "$PENDING"' EXIT
@@ -112,7 +111,7 @@ fi
 
 # Full slug list for the month, minus the already-done set → still pending.
 # Reads from the *filtered* CSV so only repos that survived the filter chain
-# are fetched.  This keeps the language-loader's GraphQL fetch volume within
+# are fetched.  This keeps the repo-language-loader's GraphQL fetch volume within
 # GitHub's rate-limit ceiling.
 awk -F',' 'NR>1 && ($3 == "PullRequestEvent" || $3 == "IssuesEvent" || $3 == "PushEvent" || $3 == "WatchEvent") {print $2}' "$FILTERED_OUT" | sort -u \
   | comm -23 - "$DONE_REPOS" > "$PENDING"
@@ -125,7 +124,7 @@ else
   # awk/sort run on the host; their output is piped into the container via stdin.
   # Inter-request pacing is handled internally by the loader (adaptive cooldown).
   cat "$PENDING" \
-    | docker_run language_loader github_language_loader -- \
+    | docker_run repo_language_loader repo_language_loader -- \
     >> "$LANGUAGES_OUT"
   echo "[$(date -Iseconds)] Step 3 done → $LANGUAGES_OUT"
 fi
@@ -138,8 +137,8 @@ if [[ -f "$PR_OUT" ]]; then
 else
   echo "[$(date -Iseconds)] Step 4 — producing statistics for ${YM}"
   docker_run produce_statistics produce_statistics -- \
-    --archive "$FILTERED_OUT" \
-    --languages "$LANGUAGES_OUT" \
+    --events "$FILTERED_OUT" \
+    --repo-languages "$LANGUAGES_OUT" \
     --output-dir data/stats \
     --cap-single-actor-events
   echo "[$(date -Iseconds)] Step 4 done → data/stats/language-ratings-${YM}-*.jsonl"

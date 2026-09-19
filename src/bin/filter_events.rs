@@ -1,6 +1,6 @@
-//! filter_archive
+//! filter_events
 //!
-//! Reads an aggregated events CSV produced by `github_archive_loader`, applies
+//! Reads an aggregated events CSV produced by `event_loader`, applies
 //! a configurable chain of filters, and writes the surviving rows to a new CSV
 //! file.
 //!
@@ -13,20 +13,20 @@
 //!
 //! After the Oct 2025 GH Archive payload change, language attribution moved to
 //! GraphQL, so these filters matter more: volume/automation noise that used to
-//! be diluted by archive-side language fields now swings ratings directly.
+//! be diluted by event-payload language fields now swings ratings directly.
 //! A continuity filter (require the repo in the previous two raw months) was
 //! tried and dropped — with bots + actor/push caps, ratings barely moved, while
 //! continuity discarded most repos and complicated GraphQL coverage.
 //!
 //! Scoring-time companion (not a filter here):
 //! `produce_statistics --cap-single-actor-events` caps pr/push volume on
-//! single-actor repos without dropping them from the archive.
+//! single-actor repos without dropping them from the events CSV.
 //!
 //! Usage:
-//!   filter_archive --input archive-202605.csv --output archive-202605-filtered.csv
-//!   filter_archive --input archive-202605.csv --output archive-202605-filtered.csv --actor-event-limit 500
-//!   filter_archive --input archive-202605.csv --output archive-202605-filtered.csv --repo-issue-limit 5000
-//!   filter_archive --input archive-202605.csv --output archive-202605-filtered.csv --repo-push-limit 100
+//!   filter_events --input data/events/events-2026-05.csv --output data/events-filtered/events-2026-05.csv
+//!   filter_events --input data/events/events-2026-05.csv --output data/events-filtered/events-2026-05.csv --actor-event-limit 500
+//!   filter_events --input data/events/events-2026-05.csv --output data/events-filtered/events-2026-05.csv --repo-issue-limit 5000
+//!   filter_events --input data/events/events-2026-05.csv --output data/events-filtered/events-2026-05.csv --repo-push-limit 100
 //!
 //! Output: the file path specified by --output.
 
@@ -39,10 +39,7 @@ use std::path::{Path, PathBuf};
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(
-    name = "filter_archive",
-    about = "Filter an aggregated events CSV file"
-)]
+#[command(name = "filter_events", about = "Filter an aggregated events CSV file")]
 struct Args {
     /// Input CSV file (actor,repo,event_type,action,language,count)
     #[arg(long)]
@@ -67,7 +64,7 @@ struct Args {
 
     /// Drop repos whose total event count for the month is below this
     /// threshold.  Trims the long tail of low-activity repos that contribute
-    /// negligibly to any rating and dominate the language-loader's GraphQL
+    /// negligibly to any rating and dominate the repo-language-loader's GraphQL
     /// fetch volume.
     ///
     /// Counts are summed across all actors and event types for each repo.
@@ -533,7 +530,7 @@ fn filter_single_event_repos(rows: &[Row]) -> Vec<usize> {
 /// `min_events`.
 ///
 /// This trims the long tail of low-activity repos that contribute negligibly
-/// to any rating while dominating the language-loader's GraphQL fetch
+/// to any rating while dominating the repo-language-loader's GraphQL fetch
 /// volume.  A single-digit monthly event count is a weak signal for a
 /// repo's true language makeup, and these repos make up the overwhelming
 /// majority of the dataset.
@@ -906,12 +903,12 @@ mod tests {
     // ── end-to-end via run() ──────────────────────────────────────────────────
 
     #[test]
-    fn test_filter_archive_end_to_end() -> Result<()> {
+    fn test_filter_events_end_to_end() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let dir = tmp.path();
 
         std::fs::write(
-            dir.join("archive-202401.csv"),
+            dir.join("events-2024-01.csv"),
             r#"actor,repo,event_type,action,language,count
 alice,rust-lang/rust,PushEvent,,,5
 alice,rust-lang/rust,PullRequestEvent,opened,,3
@@ -926,8 +923,8 @@ eve,spam/repo,PushEvent,,,1
         )?;
 
         run(Args {
-            input: dir.join("archive-202401.csv"),
-            output: dir.join("archive-202401-filtered.csv"),
+            input: dir.join("events-2024-01.csv"),
+            output: dir.join("events-2024-01.csv"),
             actor_event_limit: 1_000,
             repo_issue_limit: 10_000,
             repo_push_limit: 100,
@@ -935,7 +932,7 @@ eve,spam/repo,PushEvent,,,1
         })?;
 
         assert_eq!(
-            std::fs::read_to_string(dir.join("archive-202401-filtered.csv"))?,
+            std::fs::read_to_string(dir.join("events-2024-01.csv"))?,
             r#"actor,repo,event_type,action,language,count
 alice,rust-lang/rust,PushEvent,,,5
 alice,rust-lang/rust,PullRequestEvent,opened,,3
@@ -958,7 +955,7 @@ bob,rust-lang/rust,PushEvent,,,2
         let dir = tmp.path();
 
         std::fs::write(
-            dir.join("archive-202401.csv"),
+            dir.join("events-2024-01.csv"),
             r#"actor,repo,event_type,action,language,count
 alice,human/repo,PushEvent,,,1
 dependabot[bot],human/repo,PushEvent,,,20
@@ -966,8 +963,8 @@ dependabot[bot],human/repo,PushEvent,,,20
         )?;
 
         run(Args {
-            input: dir.join("archive-202401.csv"),
-            output: dir.join("archive-202401-filtered.csv"),
+            input: dir.join("events-2024-01.csv"),
+            output: dir.join("events-2024-01.csv"),
             actor_event_limit: 1_000,
             repo_issue_limit: 10_000,
             repo_push_limit: 100,
@@ -975,7 +972,7 @@ dependabot[bot],human/repo,PushEvent,,,20
         })?;
 
         assert_eq!(
-            std::fs::read_to_string(dir.join("archive-202401-filtered.csv"))?,
+            std::fs::read_to_string(dir.join("events-2024-01.csv"))?,
             r#"actor,repo,event_type,action,language,count
 alice,human/repo,PushEvent,,,1
 "#
