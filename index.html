@@ -678,6 +678,8 @@ const DATA_BASE = 'data/stats/language-ratings-all-';
 const CHART_LANGUAGES = 50;
 const CHART_DEFAULT_ACTIVE = 10;
 const TABLE_LANGUAGES = 100;
+// Max ▲/▼ glyphs in the Change column; leftover steps shown as +N / -N.
+const RANK_ARROW_MAX = 5;
 
 const METRIC_DESC = {
   'pr-count':     'Total pull-request actions per language per month.',
@@ -993,7 +995,7 @@ function renderTable(months, byMonth, languages, latestMonth) {
     const deltaClass = delta > 0.05 ? 'delta-pos' : delta < -0.05 ? 'delta-neg' : 'delta-neu';
     const deltaStr   = (delta >= 0 ? '+' : '') + delta.toFixed(2) + ' pp';
 
-    // Rank arrows: one arrow per position, capped at 10 to avoid huge strings
+    // Rank arrows: one arrow per position, capped at RANK_ARROW_MAX
     let rankHtml = '';
     if (rankChange === null) {
       rankHtml = '<span class="delta-neu">new</span>';
@@ -1003,8 +1005,11 @@ function renderTable(months, byMonth, languages, latestMonth) {
       const arrow    = rankChange > 0 ? '▲' : '▼';
       const cls      = rankChange > 0 ? 'delta-pos' : 'delta-neg';
       const absSteps = Math.abs(rankChange);
-      const arrows   = arrow.repeat(Math.min(absSteps, 5));
-      const extra    = absSteps > 5 ? `<span class="delta-neu" style="font-size:0.75em">${rankChange > 0 ? '+' : '-'}${absSteps}</span>` : '';
+      const arrows   = arrow.repeat(Math.min(absSteps, RANK_ARROW_MAX));
+      // +N / -N is the leftover beyond the shown arrows, not the total move
+      const extra    = absSteps > RANK_ARROW_MAX
+        ? `<span class="delta-neu" style="font-size:0.75em">${rankChange > 0 ? '+' : '-'}${absSteps - RANK_ARROW_MAX}</span>`
+        : '';
       rankHtml = `<span class="${cls}">${arrows}</span>${extra}`;
     }
 
