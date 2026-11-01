@@ -105,21 +105,41 @@ Individual pipeline step examples are documented in `README.md`.
 
 ### Frontend Testing
 
-After making any change to `index.html`, verify it visually using the integrated browser tool:
+After **any** change to `index.html`, verify with the integrated browser tool.
+Do not use `file://` — ECharts and `fetch` require HTTP.
 
-1. Start a local HTTP server in the background (do not use `file://` URLs — ECharts and fetch-based data loading require HTTP):
+**Setup**
+
+1. Start a local HTTP server (reuse one if already running):
    ```bash
    python3 -m http.server 8080 --directory . &
    ```
-2. Navigate the browser tool to `http://localhost:8080/index.html`.
-3. Take a snapshot or screenshot and confirm the page renders correctly (chart visible, table populated, no console errors).
-4. Check the browser console for JavaScript errors (`playwright_browser_console_messages` at level `error`).
-5. Kill the server when done:
+   If port 8080 is taken, try 8081, 8082, etc.
+2. Navigate to `http://localhost:8080/index.html` (adjust port if needed).
+3. Run the checklist below on **desktop** and **mobile** viewports
+   (e.g. ~1280×900 and ~390×844 via device metrics override).
+4. Confirm no JavaScript errors in the browser console.
+5. Stop the server if you started it for this check:
    ```bash
    kill %1   # or: pkill -f "http.server 8080"
    ```
 
-If port 8080 is already in use, try 8081, 8082, etc.
+**Checklist (must all pass)**
+
+- [ ] Page loads: title, metric control, chart, legend, and table are visible
+- [ ] Title shows the full data range in smaller text (e.g. `2015-01 – 2026-10`);
+      on mobile the range stacks under the title
+- [ ] No horizontal page overflow; no JS console errors
+- [ ] Chart renders series; legend toggles series on/off
+- [ ] Chart zoom works (slider and/or wheel/pinch); x-axis labels densify when zoomed in
+- [ ] Table “Latest” / rankings / Δ / sparklines follow the **zoom end** month
+      (changing the right zoom edge updates the table; there is no separate “As of” control)
+- [ ] **Compare vs** defaults to **1 year ago**; includes **1 month ago** and multi-year options;
+      changing it updates rank-change, Δ, and trend without resetting zoom
+- [ ] Metric switch reloads data, resets zoom to full range, and table returns to the latest month
+- [ ] Rank Change column: at most `RANK_ARROW_MAX` arrows; any `+N` / `-N` is the **leftover**
+      beyond those arrows (not the total move)
+- [ ] Mobile table uses the card layout (no desktop thead); rank/change still readable
 
 ### What NOT to Do
 
