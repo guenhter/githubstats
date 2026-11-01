@@ -127,7 +127,19 @@ Each record has a `month` field prepended:
 
 ---
 
+## Viewing the results
 
+`index.html` is a zero-build SPA that reads the packed rating files under
+`data/stats/`. Serve the repo over HTTP (not `file://` — the browser needs
+HTTP for `fetch` and the ECharts CDN):
+
+```bash
+python3 -m http.server 8080 --directory .
+```
+
+Then open http://localhost:8080/index.html.
+
+---
 
 ## Rating formula
 
