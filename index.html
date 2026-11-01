@@ -27,11 +27,34 @@
       margin: 0 auto;
     }
 
-    h1 {
+    .page-title {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0 0.55em;
+      margin-bottom: 20px;
+    }
+
+    .page-title h1 {
       font-size: 1.4rem;
       font-weight: 600;
-      margin-bottom: 20px;
       color: #f0f6fc;
+      margin: 0;
+    }
+
+    .page-title .data-range {
+      font-size: 0.85rem;
+      font-weight: 400;
+      color: #8b949e;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 599px) {
+      .page-title {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+      }
     }
 
     /* ── Controls ── */
@@ -498,7 +521,10 @@
 
 <div class="page-wrap">
 
-<h1>GitHub Language Trends</h1>
+<div class="page-title">
+  <h1>GitHub Language Trends</h1>
+  <span id="dataRange" class="data-range"></span>
+</div>
 
 <div class="controls">
   <div class="controls-row">
@@ -512,11 +538,6 @@
     </select>
 
     <span id="metricDesc" class="metric-desc"></span>
-  </div>
-
-  <div class="controls-row">
-    <label for="asOf">As of</label>
-    <select id="asOf"></select>
   </div>
 </div>
 
@@ -703,22 +724,24 @@ window.addEventListener('resize', () => {
 let currentType = document.getElementById('metric').value;
 // Tracks user legend selections keyed by language name. null = use default.
 let legendSelected = null;
+// Chart zoom window (percent). Table "as of" follows zoomEndPct.
+let zoomStartPct = 0;
+let zoomEndPct = 100;
+let tableZoomTimer = null;
 
 // ── Controls ──────────────────────────────────────────────────────────────────
 
 document.getElementById('metric').addEventListener('change', e => {
   currentType = e.target.value;
   legendSelected = null;
+  zoomStartPct = 0;
+  zoomEndPct = 100;
   document.getElementById('metricDesc').textContent = METRIC_DESC[currentType] ?? '';
   loadAndRender(currentType);
 });
 
-document.getElementById('asOf').addEventListener('change', () => {
-  if (window._parsedData) renderAll(window._parsedData);
-});
-
 document.getElementById('compareYears').addEventListener('change', () => {
-  if (window._parsedData) renderAll(window._parsedData);
+  syncTableFromZoom();
 });
 
 // ── Data loading ──────────────────────────────────────────────────────────────
@@ -732,30 +755,15 @@ async function loadAndRender(type) {
     const text = await response.text();
     const records = parseJsonl(text);
     window._parsedData = records;
-    populateMonthPicker(records);
     renderAll(records);
   } catch (err) {
     console.error(err);
     window._parsedData = null;
+    window._view = null;
     clearAll();
   } finally {
     showOverlay(false);
   }
-}
-
-function populateMonthPicker(records) {
-  const months = [...new Set(records.map(r => r.month))].sort();
-  const sel = document.getElementById('asOf');
-  const prev = sel.value;
-  sel.innerHTML = '';
-  for (let i = months.length - 1; i >= 0; i--) {
-    const opt = document.createElement('option');
-    opt.value = months[i];
-    opt.textContent = months[i];
-    sel.appendChild(opt);
-  }
-  // Restore previous selection if still valid, otherwise default to latest
-  sel.value = months.includes(prev) ? prev : months[months.length - 1];
 }
 
 function parseJsonl(text) {
@@ -770,38 +778,107 @@ function parseJsonl(text) {
 
 // ── Data processing ───────────────────────────────────────────────────────────
 
-function processData(records, selectedMonth) {
+function processData(records) {
   // Group by month → { language → percentage }
   const byMonth = new Map();
   for (const r of records) {
-    if (r.month > selectedMonth) continue;   // ignore months after the cutoff
     if (!byMonth.has(r.month)) byMonth.set(r.month, new Map());
     byMonth.get(r.month).set(r.language, r.percentage);
   }
 
-  // Sorted months (chronological), all ≤ selectedMonth
   const months = [...byMonth.keys()].sort();
 
-  // Top languages ranked by the selected (latest visible) month
-  const latestData = byMonth.get(selectedMonth) ?? new Map();
+  // Chart series stay ranked by the absolute latest month (stable while zooming).
+  const latestData = byMonth.get(months[months.length - 1]) ?? new Map();
   const allLanguages = [...latestData.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([lang]) => lang);
 
-  return { months, byMonth, allLanguages, latestMonth: selectedMonth };
+  return { months, byMonth, allLanguages };
+}
+
+function monthAtZoomEnd(months) {
+  if (!months.length) return null;
+  const idx = Math.min(
+    months.length - 1,
+    Math.max(0, Math.round((months.length - 1) * zoomEndPct / 100)),
+  );
+  return months[idx];
+}
+
+function languagesAtMonth(byMonth, month, limit) {
+  const data = byMonth.get(month) ?? new Map();
+  return [...data.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([lang]) => lang)
+    .slice(0, limit);
+}
+
+function syncZoomStateFromChart() {
+  const opt = chart.getOption();
+  const zoom = (opt.dataZoom || []).find(z => z.start != null && z.end != null);
+  if (!zoom) return;
+  zoomStartPct = zoom.start;
+  zoomEndPct = zoom.end;
+}
+
+function syncTableFromZoom() {
+  const view = window._view;
+  if (!view?.months?.length) return;
+  const endMonth = monthAtZoomEnd(view.months);
+  const languages = languagesAtMonth(view.byMonth, endMonth, TABLE_LANGUAGES);
+  renderTable(view.months, view.byMonth, languages, endMonth);
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
 function renderAll(records) {
-  const selectedMonth = document.getElementById('asOf').value;
-  const { months, byMonth, allLanguages, latestMonth } = processData(records, selectedMonth);
+  const view = processData(records);
+  window._view = view;
+  const { months, byMonth, allLanguages } = view;
+
+  const rangeEl = document.getElementById('dataRange');
+  rangeEl.textContent = months.length
+    ? `${months[0]} – ${months[months.length - 1]}`
+    : '';
 
   renderChart(months, byMonth, allLanguages.slice(0, CHART_LANGUAGES));
-  renderTable(months, byMonth, allLanguages.slice(0, TABLE_LANGUAGES), latestMonth);
+  syncTableFromZoom();
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
+
+/** X-axis tick text density depends on how many months are in view. */
+function chartAxisLabelFormatter(visibleCount) {
+  if (visibleCount <= 18) return v => v;                         // YYYY-MM
+  if (visibleCount <= 36) return v =>
+    (v.endsWith('-01') || v.endsWith('-07')) ? v.slice(0, 7) : ''; // YYYY-MM twice a year
+  return v => v.endsWith('-01') ? v.slice(0, 4) : '';             // year only
+}
+
+function syncChartAxisLabels() {
+  const opt = chart.getOption();
+  const months = opt?.xAxis?.[0]?.data;
+  if (!months?.length) return;
+
+  const zoom = (opt.dataZoom || []).find(z => z.start != null && z.end != null)
+    ?? { start: 0, end: 100 };
+  const i0 = Math.floor(months.length * zoom.start / 100);
+  const i1 = Math.ceil(months.length * zoom.end / 100);
+  const visible = Math.max(1, i1 - i0);
+
+  chart.setOption({
+    xAxis: { axisLabel: { formatter: chartAxisLabelFormatter(visible) } },
+  });
+}
+
+// Re-density labels and keep the table "as of" the zoom end month.
+chart.on('dataZoom', () => {
+  syncZoomStateFromChart();
+  syncChartAxisLabels();
+  clearTimeout(tableZoomTimer);
+  tableZoomTimer = setTimeout(syncTableFromZoom, 40);
+});
 
 function renderChart(months, byMonth, languages) {
   const mobile = window.innerWidth < 600;
@@ -834,9 +911,10 @@ function renderChart(months, byMonth, languages) {
     }
   });
 
+  // Leave room under the plot for rotated x-labels + the zoom slider.
   const grid = mobile
-    ? { left: 44, right: 6, top: 10, bottom: 36 }
-    : { left: 56, right: 16, top: 16, bottom: 40 };
+    ? { left: 44, right: 6, top: 10, bottom: 64 }
+    : { left: 56, right: 16, top: 16, bottom: 72 };
 
   const option = {
     backgroundColor: '#161b22',
@@ -855,6 +933,44 @@ function renderChart(months, byMonth, languages) {
       show: false,
       selected,
     },
+    // Wheel / pinch / drag on the plot, plus a range slider under the x-axis.
+    // start/end preserved across re-renders (e.g. resize); table follows end.
+    dataZoom: [
+      {
+        type: 'inside',
+        xAxisIndex: 0,
+        filterMode: 'none',
+        start: zoomStartPct,
+        end: zoomEndPct,
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: false,
+      },
+      {
+        type: 'slider',
+        xAxisIndex: 0,
+        filterMode: 'none',
+        start: zoomStartPct,
+        end: zoomEndPct,
+        height: 22,
+        bottom: mobile ? 4 : 8,
+        borderColor: '#30363d',
+        backgroundColor: '#0d1117',
+        fillerColor: 'rgba(88, 166, 255, 0.25)',
+        handleStyle: { color: '#58a6ff', borderColor: '#58a6ff' },
+        moveHandleStyle: { color: '#58a6ff' },
+        textStyle: { color: '#8b949e', fontSize: 10 },
+        dataBackground: {
+          lineStyle: { color: '#30363d' },
+          areaStyle: { color: '#21262d' },
+        },
+        selectedDataBackground: {
+          lineStyle: { color: '#58a6ff' },
+          areaStyle: { color: 'rgba(88, 166, 255, 0.15)' },
+        },
+        emphasis: { handleStyle: { color: '#79c0ff' } },
+      },
+    ],
     xAxis: {
       type: 'category',
       data: months,
@@ -864,9 +980,7 @@ function renderChart(months, byMonth, languages) {
         fontSize: 11,
         rotate: 30,
         interval: 0,
-        formatter(v) {
-          return v.endsWith('-01') ? v.slice(0, 4) : '';
-        },
+        formatter: chartAxisLabelFormatter(months.length),
       },
       splitLine: { show: false },
     },
@@ -882,6 +996,8 @@ function renderChart(months, byMonth, languages) {
   };
 
   chart.setOption(option, true);
+  // Keep x-labels dense enough for the current zoom window.
+  syncChartAxisLabels();
 
   // Render the custom HTML legend below the chart
   renderLegend(languages, selected);
@@ -1073,13 +1189,9 @@ function showOverlay(on) {
 }
 
 function clearAll() {
-  // Clear the ECharts canvas
   chart.clear();
-  // Clear the custom HTML legend
   document.getElementById('legend-items').innerHTML = '';
-  // Clear the month picker
-  document.getElementById('asOf').innerHTML = '';
-  // Clear the table
+  document.getElementById('dataRange').textContent = '';
   document.getElementById('tableBody').innerHTML = '';
   document.getElementById('tableTitle').textContent = 'Top 100 languages';
   document.getElementById('tableCaption').textContent = '';
