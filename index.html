@@ -27,12 +27,15 @@
       margin: 0 auto;
     }
 
+    .page-header {
+      margin-bottom: 20px;
+    }
+
     .page-title {
       display: flex;
       align-items: baseline;
       flex-wrap: wrap;
       gap: 0 0.55em;
-      margin-bottom: 20px;
     }
 
     .page-title h1 {
@@ -49,11 +52,32 @@
       white-space: nowrap;
     }
 
+    .monthly-headline {
+      margin-top: 8px;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      color: #c9d1d9;
+      max-width: 52rem;
+    }
+
+    .monthly-headline:empty {
+      display: none;
+    }
+
+    .monthly-headline .headline-label {
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
     @media (max-width: 599px) {
       .page-title {
         flex-direction: column;
         align-items: flex-start;
         gap: 2px;
+      }
+
+      .monthly-headline {
+        font-size: 0.875rem;
       }
     }
 
@@ -521,9 +545,12 @@
 
 <div class="page-wrap">
 
-<div class="page-title">
-  <h1>GitHub Language Trends</h1>
-  <span id="dataRange" class="data-range"></span>
+<div class="page-header">
+  <div class="page-title">
+    <h1>GitHub Language Trends</h1>
+    <span id="dataRange" class="data-range"></span>
+  </div>
+  <p id="monthlyHeadline" class="monthly-headline"></p>
 </div>
 
 <div class="controls">
@@ -696,11 +723,16 @@
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const DATA_BASE = 'data/stats/language-ratings-all-';
+const HEADLINES_URL = 'data/stats/headlines.json';
 const CHART_LANGUAGES = 50;
 const CHART_DEFAULT_ACTIVE = 10;
 const TABLE_LANGUAGES = 100;
 // Max ▲/▼ glyphs in the Change column; leftover steps shown as +N / -N.
 const RANK_ARROW_MAX = 5;
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
 const METRIC_DESC = {
   'pr-count':     'Total pull-request actions per language per month.',
@@ -728,6 +760,8 @@ let legendSelected = null;
 let zoomStartPct = 0;
 let zoomEndPct = 100;
 let tableZoomTimer = null;
+// Curated month → sentence map from headlines.json (see docs/HEADLINE.md).
+let headlinesByMonth = {};
 
 // ── Controls ──────────────────────────────────────────────────────────────────
 
@@ -828,6 +862,7 @@ function syncTableFromZoom() {
   const endMonth = monthAtZoomEnd(view.months);
   const languages = languagesAtMonth(view.byMonth, endMonth, TABLE_LANGUAGES);
   renderTable(view.months, view.byMonth, languages, endMonth);
+  renderMonthlyHeadline(endMonth);
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -844,6 +879,35 @@ function renderAll(records) {
 
   renderChart(months, byMonth, allLanguages.slice(0, CHART_LANGUAGES));
   syncTableFromZoom();
+}
+
+// ── Monthly headline (docs/HEADLINE.md) ───────────────────────────────────────
+
+function monthDisplayName(ym) {
+  const m = Number(ym.slice(5, 7));
+  return MONTH_NAMES[m - 1] ?? ym;
+}
+
+/** Show curated sentence for the zoom-end month; hide when missing. */
+function renderMonthlyHeadline(month) {
+  const el = document.getElementById('monthlyHeadline');
+  const sentence = month ? headlinesByMonth[month] : null;
+  if (!sentence) {
+    el.textContent = '';
+    return;
+  }
+  el.replaceChildren();
+  const strong = document.createElement('span');
+  strong.className = 'headline-label';
+  strong.textContent = `${monthDisplayName(month)} Headline: `;
+  el.append(strong, document.createTextNode(sentence));
+}
+
+async function loadHeadlines() {
+  const response = await fetch(HEADLINES_URL);
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${HEADLINES_URL}`);
+  const data = await response.json();
+  headlinesByMonth = (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
@@ -1192,6 +1256,7 @@ function clearAll() {
   chart.clear();
   document.getElementById('legend-items').innerHTML = '';
   document.getElementById('dataRange').textContent = '';
+  document.getElementById('monthlyHeadline').textContent = '';
   document.getElementById('tableBody').innerHTML = '';
   document.getElementById('tableTitle').textContent = 'Top 100 languages';
   document.getElementById('tableCaption').textContent = '';
@@ -1200,7 +1265,12 @@ function clearAll() {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 document.getElementById('metricDesc').textContent = METRIC_DESC[currentType] ?? '';
-loadAndRender(currentType);
+loadHeadlines()
+  .catch(err => {
+    console.error(err);
+    headlinesByMonth = {};
+  })
+  .finally(() => loadAndRender(currentType));
 </script>
 </body>
 </html>

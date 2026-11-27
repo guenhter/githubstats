@@ -36,10 +36,12 @@ githubstats/
 │   └── stats/language-ratings-{YYYY-MM,all}-<type>.jsonl    # Ratings consumed by the frontend
 ├── docs/                       # Reference docs and sample event payloads
 │   ├── PIPELINE.md             # Pipeline overview, runbook, rating file formats
+│   ├── HEADLINE.md             # Guidelines for writing curated monthly headlines
 │   ├── LANGUAGE_DATA.md
 │   ├── GITHUB_EVENT_TYPES.md
 │   ├── screenshot.png          # README hero image (regenerate after monthly updates)
 │   └── events/{2024,2026}/     # Sample pre/post API-change payloads
+├── data/stats/headlines.json   # Curated month → headline sentences (UI lookup)
 ├── scripts/
 │   └── capture_readme_screenshot.sh  # Regenerates docs/screenshot.png
 ├── index.html                  # Frontend SPA — no build step, open directly in browser
@@ -52,6 +54,7 @@ githubstats/
 - New data files → `data/`, following the existing naming conventions (see below)
 - Reference documentation → `docs/`
 - Frontend changes → `index.html` only (no build tooling)
+- New monthly headline → append to `data/stats/headlines.json` per `docs/HEADLINE.md`
 
 ### Data File Naming Conventions
 
@@ -62,6 +65,7 @@ githubstats/
 | Repo language lookup (gitignored) | `data/repo-languages/repo-languages-YYYY-MM.jsonl` |
 | Per-month rating | `data/stats/language-ratings-YYYY-MM-<type>.jsonl` |
 | Combined all-months rating | `data/stats/language-ratings-all-<type>.jsonl` |
+| Monthly headlines | `data/stats/headlines.json` |
 
 **Valid `<type>` values:** `pr-count`, `issue-count`, `push-count`, `active-repos`, `star-count`
 
@@ -83,13 +87,16 @@ Individual pipeline step examples are documented in `docs/PIPELINE.md`.
 
 ### Monthly data updates
 
-When adding or refreshing a month’s ratings (e.g. via `collect_month.sh` or the pipeline in `docs/PIPELINE.md`), also **republish the README hero screenshot** so the image matches the latest data range:
+When adding or refreshing a month’s ratings (e.g. via `collect_month.sh` or the pipeline in `docs/PIPELINE.md`):
+
+1. **Write the monthly headline** — follow [`docs/HEADLINE.md`](docs/HEADLINE.md), then add a `"YYYY-MM": "…"` entry to [`data/stats/headlines.json`](data/stats/headlines.json). Do **not** invent a formula in `index.html`; the UI only displays curated text. Every month needs an entry (a “quiet month” blurb if nothing moved).
+2. **Republish the README hero screenshot** so the image matches the latest data range and headline:
 
 ```bash
 ./scripts/capture_readme_screenshot.sh
 ```
 
-Commit the updated `docs/screenshot.png` together with the new stats (or in the same monthly update PR).
+Commit the updated stats, `data/stats/headlines.json`, and `docs/screenshot.png` together (or in the same monthly update PR).
 
 ### Key Architecture Patterns
 
@@ -144,6 +151,9 @@ Do not use `file://` — ECharts and `fetch` require HTTP.
 - [ ] Page loads: title, metric control, chart, legend, and table are visible
 - [ ] Title shows the full data range in smaller text (e.g. `2015-01 – 2026-10`);
       on mobile the range stacks under the title
+- [ ] Monthly headline appears under the title for the zoom-end month
+      (e.g. `October Headline: …`) from `data/stats/headlines.json`; every published
+      month should have an entry; updates when the zoom end month changes; independent of metric
 - [ ] No horizontal page overflow; no JS console errors
 - [ ] Chart renders series; legend toggles series on/off
 - [ ] Chart zoom works (slider and/or wheel/pinch); x-axis labels densify when zoomed in

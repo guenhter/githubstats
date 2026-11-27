@@ -41,4 +41,4 @@ Five signals use that weighting (or a unit weight for breadth):
 | `active-repos` | Distinct active repos (breadth, not volume) |
 | `star-count` | Stars (WatchEvents) |
 
-More detail: [`docs/LANGUAGE_DATA.md`](docs/LANGUAGE_DATA.md) (language attribution), [`docs/PIPELINE.md`](docs/PIPELINE.md) (tools, runbook, rating file formats).
+More detail: [`docs/LANGUAGE_DATA.md`](docs/LANGUAGE_DATA.md) (language attribution), [`docs/PIPELINE.md`](docs/PIPELINE.md) (tools, runbook, rating file formats), [`docs/HEADLINE.md`](docs/HEADLINE.md) (monthly headline rules).
