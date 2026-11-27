@@ -1,7 +1,7 @@
 # GitHub Language Trends
 
-[![Live site](https://img.shields.io/badge/site-guenhter.github.io-blue?logo=github)](https://guenhter.github.io/githubstats/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![Live site](https://img.shields.io/badge/site-guenhter.github.io-blue?logo=github)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 **[View live site →](https://guenhter.github.io/githubstats/)**
 
@@ -9,7 +9,7 @@
 Events come from [GH Archive](https://www.gharchive.org/); bots and automation are filtered out; languages are resolved from the GitHub GraphQL API by byte share, not a single primary-language field.
 Explore the interactive chart and ranked table across five activity metrics: pull requests, pushes, issues, active repos, and stars.
 
-[![GitHub Language Trends — pull-request share over time](docs/screenshot.png)](https://guenhter.github.io/githubstats/)
+![GitHub Language Trends — pull-request share over time](docs/screenshot.png)
 
 ## Try it
 
@@ -23,13 +23,19 @@ Then open http://localhost:8080/index.html.
 
 ## How it works
 
-For each repository with language breakdown `{L: size_L}` and total codebase size `total_size`, event counts are distributed by byte share:
+Event counts are attributed by each **repository’s** language mix (byte share from the GitHub GraphQL API), not by the languages changed in the event itself. A PR in a mostly-TypeScript repo credits TypeScript even if the diff touched Python.
 
 ```
 rating[L] += event_count × (size_L / total_size)
 ```
 
-Example: a repo with 2 PRs that is 70% TypeScript / 30% Python contributes **1.4** to TypeScript and **0.6** to Python.
+Example with two repos and three PRs:
+
+| Repo | Events (PR, Push, ...) | Python | TypeScript |
+| --- | ---: | ---: | ---: |
+| RepoA (30% Py / 70% TS) | 2 | 2 × 0.3 | 2 × 0.7 |
+| RepoB (100% TS) | 1 | — | 1 × 1.0 |
+| **Total** |  | **0.6 (20%)** | **2.4 (80%)** |
 
 Five signals use that weighting (or a unit weight for breadth):
 
