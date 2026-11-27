@@ -35,8 +35,13 @@ githubstats/
 │   ├── repo-languages/repo-languages-YYYY-MM.jsonl          # Gitignored; repo → language breakdown
 │   └── stats/language-ratings-{YYYY-MM,all}-<type>.jsonl    # Ratings consumed by the frontend
 ├── docs/                       # Reference docs and sample event payloads
+│   ├── PIPELINE.md             # Pipeline overview, runbook, rating file formats
+│   ├── LANGUAGE_DATA.md
 │   ├── GITHUB_EVENT_TYPES.md
+│   ├── screenshot.png          # README hero image (regenerate after monthly updates)
 │   └── events/{2024,2026}/     # Sample pre/post API-change payloads
+├── scripts/
+│   └── capture_readme_screenshot.sh  # Regenerates docs/screenshot.png
 ├── index.html                  # Frontend SPA — no build step, open directly in browser
 ├── Cargo.toml                  # Package name is `fetch_month` (historical); defines all 5 binaries
 ```
@@ -74,7 +79,17 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-Individual pipeline step examples are documented in `README.md`.
+Individual pipeline step examples are documented in `docs/PIPELINE.md`.
+
+### Monthly data updates
+
+When adding or refreshing a month’s ratings (e.g. via `collect_month.sh` or the pipeline in `docs/PIPELINE.md`), also **republish the README hero screenshot** so the image matches the latest data range:
+
+```bash
+./scripts/capture_readme_screenshot.sh
+```
+
+Commit the updated `docs/screenshot.png` together with the new stats (or in the same monthly update PR).
 
 ### Key Architecture Patterns
 

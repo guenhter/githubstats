@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "screenshot": "node scripts/capture_readme_screenshot.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.1"
+  }
+}
